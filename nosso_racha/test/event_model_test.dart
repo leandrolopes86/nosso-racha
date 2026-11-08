@@ -25,6 +25,7 @@ void main() {
       bool allowGoalkeepers = true,
       int externalGoalkeeperSlots = 2,
       double goalkeeperAid = 40,
+      String? groupName,
       double? latitude,
       double? longitude,
       String? street,
@@ -50,6 +51,7 @@ void main() {
         status: 'scheduled',
         createdBy: 'organizer',
         groupId: 'group-1',
+        groupName: groupName,
         sport: sport,
         allowGoalkeepers: allowGoalkeepers,
         externalGoalkeeperSlots: externalGoalkeeperSlots,
@@ -99,6 +101,15 @@ void main() {
       );
 
       expect(event.locationNote, 'Quadra A');
+    });
+
+    test('round-trips the public group name', () {
+      final event = EventModel.fromMap(
+        'event-1',
+        buildEvent(groupName: 'Racha da Vila').toMap(),
+      );
+
+      expect(event.groupName, 'Racha da Vila');
     });
 
     test('round-trips optional event coordinates', () {

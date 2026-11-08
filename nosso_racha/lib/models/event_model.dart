@@ -22,6 +22,7 @@ class EventModel {
   final String status;
   final String createdBy;
   final String? groupId; // NOVO: ID do grupo vinculado
+  final String? groupName;
   final double? latitude;
   final double? longitude;
   final String? street;
@@ -62,6 +63,7 @@ class EventModel {
     required this.status,
     required this.createdBy,
     this.groupId, // NOVO
+    this.groupName,
     this.latitude,
     this.longitude,
     this.street,
@@ -142,6 +144,7 @@ class EventModel {
       status: info['status'] ?? 'scheduled',
       createdBy: audit['created_by'] ?? '',
       groupId: info['group_id'] ?? map['group_id'],
+      groupName: _stringValue(info['group_name'] ?? map['group_name']),
       latitude: _coordinateValue(info['latitude'] ?? map['latitude']),
       longitude: _coordinateValue(info['longitude'] ?? map['longitude']),
       street: _stringValue(info['street'] ?? map['street']),
@@ -184,6 +187,7 @@ class EventModel {
         'voting_opens_at': Timestamp.fromDate(votingOpensAt),
         'status': status,
         'group_id': groupId,
+        'group_name': groupName,
         'latitude': latitude,
         'longitude': longitude,
         'street': street,

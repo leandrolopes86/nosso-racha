@@ -1009,7 +1009,9 @@ class _HomePublicaViewState extends State<HomePublicaView> {
                                     ? _getGroupName(event.groupId!)
                                     : null,
                                 builder: (context, groupSnapshot) {
-                                  String nomeGrupo = 'Organização Independente';
+                                  String nomeGrupo = event.groupId == null
+                                      ? 'Organização Independente'
+                                      : event.groupName ?? 'Organização';
                                   if (groupSnapshot.data != null) {
                                     nomeGrupo = groupSnapshot.data!;
                                   } else if (groupSnapshot.hasError) {

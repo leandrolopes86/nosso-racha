@@ -16,6 +16,14 @@ class EventService extends ChangeNotifier {
 
   bool get isLoading => _isLoading;
 
+  Future<String?> _getGroupName(String? groupId) async {
+    if (groupId == null || groupId.trim().isEmpty) return null;
+
+    final snapshot = await _firestore.collection('groups').doc(groupId).get();
+    final name = snapshot.data()?['name'];
+    return name is String && name.trim().isNotEmpty ? name.trim() : null;
+  }
+
   // --- LEITURA DE DADOS ---
   Stream<QuerySnapshot> getEventsStream({String? groupId}) {
     Query query = _firestore.collection('events');
@@ -162,6 +170,9 @@ class EventService extends ChangeNotifier {
       notifyListeners();
 
       final eventMap = event.toMap();
+      final info = eventMap['info'] as Map<String, dynamic>;
+      info['group_name'] =
+          await _getGroupName(event.groupId) ?? event.groupName;
       final eventRef = _firestore.collection('events').doc();
       await _runTransactionPreservingCallbackErrors((transaction) async {
         if (_isOpenEventStatus(event.status)) {
@@ -217,6 +228,7 @@ class EventService extends ChangeNotifier {
         }
       }
 
+      final groupName = await _getGroupName(event.groupId) ?? event.groupName;
       final updates = {
         'info': {
           'title': event.title,
@@ -236,6 +248,7 @@ class EventService extends ChangeNotifier {
           'voting_opens_at': Timestamp.fromDate(event.votingOpensAt),
           'status': event.status,
           'group_id': event.groupId, // Garante a manutenção do grupo
+          'group_name': groupName,
           'latitude': event.latitude,
           'longitude': event.longitude,
           'street': event.street,
