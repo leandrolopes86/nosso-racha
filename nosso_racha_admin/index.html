@@ -11,6 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap"
       rel="stylesheet"
     />
+    <link rel="stylesheet" href="./tailwind.css" />
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
@@ -74,11 +75,25 @@
       <section id="dashboardView" class="hidden">
         <header class="topbar">
           <div class="topbar-inner">
-            <a class="brand-link" href="#" aria-label="Nosso Racha, início">
-              <span class="brand-mark brand-mark-small" aria-hidden="true">NR</span>
-              <span class="brand-name">Nosso Racha</span>
-              <span class="admin-label">ADMIN</span>
-            </a>
+            <div class="topbar-brand">
+              <button
+                id="sidebarToggle"
+                class="sidebar-toggle"
+                type="button"
+                aria-label="Abrir menu"
+                aria-expanded="false"
+                aria-controls="adminSidebar"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none">
+                  <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                </svg>
+              </button>
+              <a class="brand-link" href="#" aria-label="Nosso Racha, início" data-nav-target="overview">
+                <span class="brand-mark brand-mark-small" aria-hidden="true">NR</span>
+                <span class="brand-name">Nosso Racha</span>
+                <span class="admin-label">ADMIN</span>
+              </a>
+            </div>
             <div class="account-area">
               <span id="adminIdentity" class="account-email"></span>
               <button id="signOutButton" class="button button-quiet" type="button">
@@ -88,24 +103,88 @@
           </div>
         </header>
 
-        <div class="dashboard-content">
+        <div class="admin-shell">
+          <aside id="adminSidebar" class="sidebar" aria-label="Navegação principal">
+            <div class="sidebar-label">MENU PRINCIPAL</div>
+            <nav class="sidebar-nav">
+              <button class="sidebar-link is-active flex items-center gap-3" type="button" data-nav-target="overview" aria-current="page">
+                <span class="sidebar-icon" aria-hidden="true">◫</span>
+                <span>Visão geral</span>
+              </button>
+              <button class="sidebar-link flex items-center gap-3" type="button" data-nav-target="records">
+                <span class="sidebar-icon" aria-hidden="true">♙</span>
+                <span>Usuários e grupos</span>
+              </button>
+              <button class="sidebar-link flex items-center gap-3" type="button" data-nav-target="vip-plans">
+                <span class="sidebar-icon" aria-hidden="true">✦</span>
+                <span>Planos VIP</span>
+              </button>
+              <button class="sidebar-link flex items-center gap-3" type="button" data-nav-target="venues">
+                <span class="sidebar-icon" aria-hidden="true">⌖</span>
+                <span>Moderação de campos</span>
+              </button>
+              <button class="sidebar-link flex items-center gap-3" type="button" data-nav-target="finance">
+                <span class="sidebar-icon" aria-hidden="true">▤</span>
+                <span>Financeiro / Caixa</span>
+              </button>
+            </nav>
+            <div class="sidebar-footer">
+              <span class="sidebar-status-dot"></span>
+              <span>Ambiente administrativo</span>
+            </div>
+          </aside>
+          <button id="sidebarBackdrop" class="sidebar-backdrop" type="button" aria-label="Fechar menu"></button>
+
+          <div class="dashboard-content">
+          <div id="dashboardMessage" class="notice hidden mb-6" role="status"></div>
+          <section class="page-section" data-page-section="overview">
           <div class="page-heading">
             <div>
               <div class="eyebrow">VISÃO GERAL</div>
               <h1 class="page-title mt-2">Painel administrativo</h1>
-              <p class="muted mt-2">Gerencie cadastros e planos VIP do marketplace.</p>
+              <p class="muted mt-2">Acompanhe os cadastros e a operação do Nosso Racha.</p>
             </div>
-            <div class="collection-picker">
-              <label class="field-label" for="collectionSelect">Gerenciar</label>
-              <select id="collectionSelect" class="select-field mt-2">
-                <option value="users">Usuários</option>
-                <option value="groups">Grupos</option>
-              </select>
-            </div>
+            <button class="button button-primary" type="button" data-nav-target="records">Gerenciar cadastros</button>
           </div>
 
-          <div id="dashboardMessage" class="notice hidden mt-6" role="status"></div>
+          <div class="stats-grid mt-8">
+            <article class="stat-card">
+              <span class="stat-label">Cadastros</span>
+              <strong id="totalCount" class="stat-value">—</strong>
+              <span class="stat-caption">na coleção selecionada</span>
+            </article>
+            <article class="stat-card">
+              <span id="vipLabel" class="stat-label">Planos ativos</span>
+              <strong id="vipCount" class="stat-value">—</strong>
+              <span class="stat-caption">plano pago ainda não vencido</span>
+            </article>
+            <article class="stat-card stat-card-accent">
+              <span class="stat-label">Conexão</span>
+              <strong id="connectionState" class="stat-value stat-value-status">Conectando</strong>
+              <span class="stat-caption">atualização em tempo real</span>
+            </article>
+          </div>
+          <section class="overview-card mt-8">
+            <div class="overview-card-icon" aria-hidden="true">✦</div>
+            <div>
+              <h2 class="section-title">Planos e benefícios</h2>
+              <p class="muted mt-1">Revise os tiers, limites e recursos disponíveis para atletas e organizadores.</p>
+            </div>
+            <button class="button button-outline" type="button" data-nav-target="vip-plans">Gerenciar planos</button>
+          </section>
+          <p class="security-note mt-5">
+            “Aprovar Pix” registra uma aprovação manual e não confirma uma transação bancária.
+          </p>
+          </section>
 
+          <section class="page-section hidden" data-page-section="venues">
+          <div class="page-heading">
+            <div>
+              <div class="eyebrow">MODERAÇÃO</div>
+              <h1 class="page-title mt-2">Campos e complexos</h1>
+              <p class="muted mt-2">Revise solicitações e mantenha os locais publicados.</p>
+            </div>
+          </div>
           <section class="table-card venue-moderation mt-8" aria-labelledby="venueRequestsHeading">
             <div class="table-card-heading">
               <div>
@@ -136,30 +215,28 @@
               <p class="empty-state">Carregando locais…</p>
             </div>
           </section>
+          </section>
 
-          <div class="stats-grid mt-8">
-            <article class="stat-card">
-              <span class="stat-label">Cadastros</span>
-              <strong id="totalCount" class="stat-value">—</strong>
-              <span class="stat-caption">na coleção selecionada</span>
-            </article>
-            <article class="stat-card">
-              <span id="vipLabel" class="stat-label">Planos ativos</span>
-              <strong id="vipCount" class="stat-value">—</strong>
-              <span class="stat-caption">plano pago ainda não vencido</span>
-            </article>
-            <article class="stat-card stat-card-accent">
-              <span class="stat-label">Conexão</span>
-              <strong id="connectionState" class="stat-value stat-value-status">Conectando</strong>
-              <span class="stat-caption">atualização em tempo real</span>
-            </article>
+          <section class="page-section hidden" data-page-section="records" aria-labelledby="recordsHeading">
+          <div class="page-heading">
+            <div>
+              <div class="eyebrow">CADASTROS</div>
+              <h1 id="recordsHeading" class="page-title mt-2">Usuários e grupos</h1>
+              <p id="collectionCaption" class="muted mt-2">Dados sincronizados com o Firestore</p>
+            </div>
+            <div class="collection-picker">
+              <label class="field-label" for="collectionSelect">Coleção</label>
+              <select id="collectionSelect" class="select-field mt-2">
+                <option value="users">Usuários</option>
+                <option value="groups">Grupos</option>
+              </select>
+            </div>
           </div>
-
-          <section class="table-card mt-8" aria-labelledby="recordsHeading">
+          <section class="table-card mt-8" aria-label="Lista de cadastros">
             <div class="table-card-heading">
               <div>
-                <h2 id="recordsHeading" class="section-title">Cadastros</h2>
-                <p id="collectionCaption" class="muted mt-1">Dados sincronizados com o Firestore</p>
+                <h2 class="section-title">Cadastros</h2>
+                <p class="muted mt-1">Busque, consulte e atualize planos VIP.</p>
               </div>
               <label class="search-wrap" for="searchInput">
                 <span class="sr-only">Buscar cadastro</span>
@@ -193,14 +270,41 @@
               <span class="live-indicator"><span></span> Dados em tempo real</span>
             </div>
           </section>
+          </section>
 
-          <p class="security-note mt-5">
-            Enquanto o painel está em testes, qualquer conta autenticada pode
-            alterar planos VIP. Restrinja essa permissão antes de publicar em
-            produção. A renovação de grupos é feita exclusivamente no perfil do
-            organizador. “Aprovar Pix” registra uma aprovação manual, não
-            confirma uma transação bancária.
-          </p>
+          <section class="page-section hidden" data-page-section="vip-plans" aria-labelledby="vipPlansTitle">
+            <div class="page-heading">
+              <div>
+                <div class="eyebrow">PRODUTO E ASSINATURAS</div>
+                <h1 id="vipPlansTitle" class="page-title mt-2">Manutenção de planos VIP</h1>
+                <p class="muted mt-2">Configure os limites dos cinco planos disponíveis no app.</p>
+              </div>
+            </div>
+            <div class="plan-config-note mt-6" role="note">
+              <strong>Planos disponíveis</strong>
+              <span>Free, Bronze, Silver, Gold e Platinum, nesta ordem. Os nomes e tipos são fixos; personalize os limites e recursos.</span>
+            </div>
+            <div id="vipPlanMessage" class="notice hidden mt-6" role="status"></div>
+            <div id="vipPlansList" class="vip-plans-grid mt-8" aria-live="polite">
+              <p class="empty-state">Carregando planos…</p>
+            </div>
+          </section>
+
+          <section class="page-section hidden" data-page-section="finance" aria-labelledby="financeTitle">
+            <div class="page-heading">
+              <div>
+                <div class="eyebrow">FINANCEIRO</div>
+                <h1 id="financeTitle" class="page-title mt-2">Financeiro / Caixa</h1>
+                <p class="muted mt-2">Visão administrativa de pagamentos e movimentações.</p>
+              </div>
+            </div>
+            <div class="finance-placeholder mt-8">
+              <div class="overview-card-icon" aria-hidden="true">▤</div>
+              <h2 class="section-title mt-5">Módulo financeiro</h2>
+              <p class="muted mt-2">O painel ainda não consolida os caixas das organizações. Os lançamentos e pagamentos continuam disponíveis no app para os respectivos organizadores.</p>
+            </div>
+          </section>
+        </div>
         </div>
       </section>
 
@@ -263,6 +367,70 @@
             <div class="venue-approval-actions mt-6">
               <button id="cancelVenueApprovalButton" class="button button-quiet" type="button">Cancelar</button>
               <button id="approveVenueButton" class="button button-primary" type="submit">Aprovar e publicar</button>
+            </div>
+          </div>
+        </form>
+      </dialog>
+
+      <dialog id="vipPlanDialog" class="record-dialog vip-plan-dialog" aria-labelledby="vipPlanDialogTitle">
+        <form id="vipPlanForm">
+          <div class="record-dialog-header">
+            <div>
+              <div class="eyebrow">CATÁLOGO DE PLANOS</div>
+              <h2 id="vipPlanDialogTitle" class="section-title mt-2">Editar plano</h2>
+            </div>
+            <button id="closeVipPlanDialogButton" class="button button-quiet" type="button" aria-label="Fechar formulário">Fechar</button>
+          </div>
+          <div class="vip-plan-form-content">
+            <div class="vip-plan-form-grid">
+              <label class="field-label" for="vipPlanColor">
+                Cor de destaque
+                <input id="vipPlanColor" class="color-field mt-2" type="color" value="#18764f" />
+              </label>
+            </div>
+            <label class="toggle-field mt-5">
+              <input id="vipPlanActive" type="checkbox" checked />
+              <span>
+                <strong>Plano disponível para novas atribuições</strong>
+                <small>Desativar mantém os dados históricos e benefícios de assinaturas existentes.</small>
+              </span>
+            </label>
+            <h3 class="plan-form-section-title mt-6">Limites de uso</h3>
+            <p class="muted mt-1">Deixe vazio para ilimitado. O limite padrão de recursos começa em 50.</p>
+            <div class="vip-plan-limits-grid mt-4">
+              <label class="field-label" for="limitDefault">Limite padrão
+                <input id="limitDefault" class="text-field mt-2" type="number" min="0" max="1000000" required />
+              </label>
+              <label class="field-label" for="limitMemberships">Organizações por atleta
+                <input id="limitMemberships" class="text-field mt-2" type="number" min="0" max="1000000" />
+              </label>
+              <label class="field-label" for="limitOwnedGroups">Organizações criadas
+                <input id="limitOwnedGroups" class="text-field mt-2" type="number" min="0" max="1000000" />
+              </label>
+              <label class="field-label" for="limitOpenEvents">Rachas abertos
+                <input id="limitOpenEvents" class="text-field mt-2" type="number" min="0" max="1000000" />
+              </label>
+              <label class="field-label" for="limitAthletes">Atletas por organização
+                <input id="limitAthletes" class="text-field mt-2" type="number" min="0" max="1000000" />
+              </label>
+              <label class="field-label" for="limitCoOrganizers">Co-organizadores
+                <input id="limitCoOrganizers" class="text-field mt-2" type="number" min="0" max="1000000" />
+              </label>
+              <label class="field-label" for="limitReports">Relatórios
+                <input id="limitReports" class="text-field mt-2" type="number" min="0" max="1000000" />
+              </label>
+            </div>
+            <fieldset class="plan-features mt-6">
+              <legend class="plan-form-section-title">Recursos do organizador</legend>
+              <label><input type="checkbox" name="vipPlanFeature" value="settings" /> Configurações avançadas</label>
+              <label><input type="checkbox" name="vipPlanFeature" value="finance" /> Gestão financeira</label>
+              <label><input type="checkbox" name="vipPlanFeature" value="reports" /> Relatórios</label>
+              <label><input type="checkbox" name="vipPlanFeature" value="athleteManagement" /> Gestão de atletas</label>
+            </fieldset>
+            <p id="vipPlanFormMessage" class="notice hidden mt-5" role="alert"></p>
+            <div class="venue-approval-actions mt-6">
+              <button id="cancelVipPlanDialogButton" class="button button-quiet" type="button">Cancelar</button>
+              <button id="saveVipPlanButton" class="button button-primary" type="submit">Salvar plano</button>
             </div>
           </div>
         </form>

@@ -304,9 +304,17 @@ service cloud.firestore {
     function canReadEvent(eventId, eventData) {
       let info = eventData.get('info', {});
       let visibility = info.get('visibility', 'public');
+      let status = info.get('status', eventData.get('status', ''));
       let groupId = eventGroupId(eventData);
       let creatorId = eventData.get('audit', {}).get('created_by', null);
-      return visibility in ['public', 'moderated']
+      return (
+          (visibility == 'public' || visibility == 'moderated')
+          && (
+            status == 'published'
+            || status == 'in_progress'
+            || status == 'finished'
+          )
+        )
         || (signedIn()
           && (
             creatorId == request.auth.uid
@@ -432,17 +440,26 @@ service cloud.firestore {
 
     function isValidVipUpdate() {
       let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
-      let validPlan = request.resource.data.vipPlan in [
-        'Free',
-        'Bronze',
-        'Prata',
-        'Ouro',
-        'Platinum'
-      ];
+      let plan = request.resource.data.vipPlan;
+      let isFree = plan in ['Free', 'free'];
+      let validPlan = isFree || plan in [
+          'Bronze',
+          'bronze',
+          'Prata',
+          'prata',
+          'Ouro',
+          'ouro',
+          'Platinum',
+          'platinum',
+          'Silver',
+          'silver',
+          'Gold',
+          'gold'
+        ] || resource.data.get('vipPlan', '') == plan;
       let validExpiration =
-        (request.resource.data.vipPlan == 'Free' &&
+        (isFree &&
           request.resource.data.vipExpiresAt == null) ||
-        (request.resource.data.vipPlan != 'Free' &&
+        (!isFree &&
           request.resource.data.vipExpiresAt is timestamp &&
           request.resource.data.vipExpiresAt > request.time);
 
@@ -796,7 +813,14 @@ service cloud.firestore {
     }
 
     match /settings/{settingId} {
-      allow read, write: if signedIn() && settingId != 'payment_gateway';
+      allow read: if settingId == 'vip_plans'
+        || (signedIn() && settingId != 'payment_gateway');
+      allow write: if (
+          settingId == 'vip_plans' && isAdmin()
+        ) || (
+          signedIn() && settingId != 'payment_gateway'
+            && settingId != 'vip_plans'
+        );
     }
 
     match /venues/{venueId} {

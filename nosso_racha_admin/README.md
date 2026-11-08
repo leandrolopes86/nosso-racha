@@ -1,5 +1,50 @@
 # Painel administrativo
 
+## Executar localmente
+
+Na raiz do monorepo, instale e compile os utilitários Tailwind:
+
+```powershell
+npm --prefix nosso_racha_admin ci
+npm --prefix nosso_racha_admin run build:css
+Copy-Item nosso_racha_admin\config.example.js nosso_racha_admin\config.js
+py -m http.server 8080 -d nosso_racha_admin
+```
+
+Abra <http://localhost:8080>. O `config.js` é local e ignorado pelo Git; a chave
+do Google Maps deve ser restrita por referenciador HTTP e APIs. O usuário do
+painel precisa ter o custom claim `admin: true` no Firebase Authentication.
+Publicar regras de segurança continua obrigatório: a interface não substitui
+as permissões do Firestore.
+
+## Navegação do painel
+
+O painel é uma aplicação de página única. `navigation.js` controla a barra
+lateral responsiva e alterna as seções de visão geral, cadastros, planos VIP,
+moderação de campos e financeiro sem recarregar a página. O módulo financeiro
+está indicado na navegação, mas ainda não consolida os caixas das organizações.
+
+## Catálogo de planos VIP
+
+O módulo `vip-plans.js` lê e grava o documento `settings/vip_plans`. Os únicos
+planos disponíveis, sempre nessa ordem, são **Free**, **Bronze**, **Silver**,
+**Gold** e **Platinum**. Os nomes e tipos de acesso são fixos; a tela permite
+configurar cor, status, limites e recursos. IDs antigos `prata` e `ouro` são
+exibidos como Silver e Gold, respectivamente. Configurações antigas de tiers
+personalizados não aparecem nem são aceitas para novas atribuições; ao salvar
+o catálogo, somente os cinco planos padrão são mantidos. Os limites configurados
+são lidos pelo app Flutter no início da execução.
+
+O catálogo pode ser inicializado pela edição de um dos cinco planos na tela
+VIP. As regras permitem leitura pública dos metadados e escrita somente a
+usuários autenticados com o custom claim `admin: true`. Publique as regras
+definidas em `nosso_racha/firestore.rules` antes de usar a manutenção de planos:
+
+```powershell
+cd nosso_racha
+firebase deploy --only firestore:rules --project nosso-racha
+```
+
 ## Cadastro e revisão de campos
 
 Na seção **Solicitações de novos campos**, use **Adicionar campo** para abrir

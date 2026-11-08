@@ -20,8 +20,8 @@ separado e usam Node.js e Firebase Admin SDK.
 ## Funcionalidades
 
 - Criação, consulta e gestão de eventos, participantes e organizações.
-- Planos Free e VIP com limites e permissões associados a atletas e
-  organizadores.
+- Planos Free, Bronze, Silver, Gold e Platinum, nesta ordem, com limites e
+  permissões associados a atletas e organizadores.
 - Operação administrativa de usuários e planos VIP.
 - Moderação de solicitações de cadastro de campos e gestão dos locais publicados.
 - Fluxo em duas etapas para a ajuda de custo do goleiro: o organizador registra
@@ -78,20 +78,33 @@ Em outro terminal, na raiz do monorepo:
 
 ```powershell
 cd nosso_racha_admin
+npm ci
+npm run build:css
+Copy-Item config.example.js config.js
 py -m http.server 8080
 ```
 
-Abra <http://localhost:8080>. O painel depende da configuração Firebase
-existente em `app.js`; confirme que ela corresponde ao seu projeto, que o
-domínio local está autorizado no Firebase Authentication e que a conta tem
-permissões administrativas nas regras do Firestore. O recurso de busca do
-Google Maps também requer uma chave de navegador com restrições adequadas.
+Abra <http://localhost:8080>. Confirme que a configuração Firebase em `app.js`
+corresponde ao seu projeto e que o domínio local está autorizado no Firebase
+Authentication. Configure a chave de Maps no `config.js` local e use uma conta
+com claim administrativo no Firestore.
+
+O catálogo de planos fica em `settings/vip_plans` no Firestore. O app Flutter
+carrega esse catálogo no início e usa os limites padrões locais caso o documento
+ainda não exista.
 
 Os scripts Node do diretório `nosso_racha_admin/functions/` têm dependências
 próprias. Para instalá-las quando for trabalhar nesses utilitários:
 
 ```powershell
 npm --prefix nosso_racha_admin/functions ci
+```
+
+As alterações às regras do Firestore devem ser publicadas junto com o app:
+
+```powershell
+cd nosso_racha
+firebase deploy --only firestore:rules --project nosso-racha
 ```
 
 ## Segurança e configuração local

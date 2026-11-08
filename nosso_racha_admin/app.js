@@ -18,6 +18,14 @@ import {
   updateDoc,
   writeBatch,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { initializeNavigation } from "./navigation.js";
+import {
+  getVipPlanCatalog,
+  initializeVipPlans,
+  isPaidVipPlan,
+  normalizeVipPlanId,
+  vipPlanDisplayName,
+} from "./vip-plans.js";
 
 // Substitua pelos dados do seu app Firebase.
 const firebaseConfig = {
@@ -31,7 +39,6 @@ const GOOGLE_MAPS_API_KEY =
   typeof window.nossoRachaConfig?.googleMapsApiKey === "string"
     ? window.nossoRachaConfig.googleMapsApiKey
     : "";
-const VIP_PLANS = ["Free", "Bronze", "Prata", "Ouro", "Platinum"];
 const MANUAL_PIX_RENEWAL_DAYS = 30;
 const elements = {
   loginView: document.querySelector("#loginView"),
@@ -106,6 +113,7 @@ let manualVenueRef;
 let googleMapsLoadPromise;
 let venuePlaceSearchVersion = 0;
 let googleMapsLoadTimeout;
+let vipPlansController;
 
 function showMessage(element, message, kind = "error") {
   element.textContent = message;
@@ -331,14 +339,23 @@ function createPlanSelect(currentPlan) {
   select.className = "row-editor";
   select.setAttribute("aria-label", "Plano VIP");
 
-  for (const plan of VIP_PLANS) {
+  const plans = Object.values(getVipPlanCatalog()).filter((plan) => plan.active);
+  const currentPlanId = normalizeVipPlanId(currentPlan);
+  if (
+    currentPlanId &&
+    !plans.some((plan) => plan.id === currentPlanId) &&
+    getVipPlanCatalog()[currentPlanId]
+  ) {
+    plans.push(getVipPlanCatalog()[currentPlanId]);
+  }
+  for (const plan of plans) {
     const option = document.createElement("option");
-    option.value = plan;
-    option.textContent = plan;
+    option.value = plan.id;
+    option.textContent = `${plan.displayName}${plan.active ? "" : " (desativado)"}`;
     select.append(option);
   }
 
-  select.value = VIP_PLANS.includes(currentPlan) ? currentPlan : "Free";
+  select.value = plans.some((plan) => plan.id === currentPlanId) ? currentPlanId : "free";
   return select;
 }
 
@@ -390,9 +407,11 @@ function createRecordRow(record) {
   const planCell = document.createElement("td");
   planCell.dataset.label = isGroup ? "Plano do organizador" : "Plano VIP";
   const badge = document.createElement("span");
-  const plan = VIP_PLANS.includes(vipData.vipPlan) ? vipData.vipPlan : "Free";
-  badge.className = `plan-badge${plan === "Free" ? "" : " is-vip"}`;
-  badge.textContent = plan;
+  const plan = normalizeVipPlanId(vipData.vipPlan) || "free";
+  badge.className = `plan-badge${isPaidVipPlan(plan) ? " is-vip" : ""}`;
+  badge.textContent = vipPlanDisplayName(plan);
+  const planColor = getVipPlanCatalog()[plan]?.color;
+  if (planColor) badge.style.setProperty("--plan-color", planColor);
   if (isGroup) badge.title = "Plano do organizador";
   planCell.append(badge);
 
@@ -468,8 +487,7 @@ function renderRecords() {
     const vipData = getVipData(record);
     const expiration = toDate(vipData.vipExpiresAt);
     const hasActiveVip =
-      VIP_PLANS.includes(vipData.vipPlan) &&
-      vipData.vipPlan !== "Free" &&
+      isPaidVipPlan(vipData.vipPlan) &&
       expiration !== null &&
       expiration.getTime() > now;
     if (hasActiveVip) {
@@ -1191,6 +1209,13 @@ async function showAdminDashboard(user) {
   hideMessage(elements.loginMessage);
   setView(true);
   elements.adminIdentity.textContent = user.email ?? user.uid;
+  vipPlansController ??= initializeVipPlans({
+    db,
+    auth,
+    showDashboardMessage: (message, kind) => showMessage(elements.dashboardMessage, message, kind),
+    hideDashboardMessage: () => hideMessage(elements.dashboardMessage),
+  });
+  vipPlansController.start();
   listenToCollection(elements.collectionSelect.value);
   listenToPendingVenues();
   listenToVenues();
@@ -1218,6 +1243,8 @@ function initialize() {
       unsubscribePendingVenues = undefined;
       unsubscribeVenues?.();
       unsubscribeVenues = undefined;
+      vipPlansController?.stop();
+      vipPlansController = undefined;
       pendingVenueRequests = [];
       venues = [];
       records = [];
@@ -1296,4 +1323,5 @@ function initialize() {
   });
 }
 
+initializeNavigation();
 initialize();
