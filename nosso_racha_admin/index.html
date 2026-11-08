@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f5f7fb" />
+    <title>Admin | Nosso Racha</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main>
+      <section id="loginView" class="login-layout">
+        <div class="login-brand">
+          <div class="brand-mark" aria-hidden="true">NR</div>
+          <span class="brand-name">Nosso Racha</span>
+        </div>
+        <div class="login-card">
+          <div class="eyebrow">ÁREA RESTRITA</div>
+          <h1 class="page-title mt-2">Acesse o painel</h1>
+          <p class="muted mt-2">Entre com sua conta do Firebase Authentication.</p>
+          <form id="loginForm" class="mt-8 space-y-5">
+            <label class="field-label" for="loginEmail">
+              E-mail
+              <input
+                id="loginEmail"
+                name="email"
+                type="email"
+                autocomplete="username"
+                placeholder="admin@meusite.com.br"
+                class="text-field mt-2"
+                required
+              />
+            </label>
+            <label class="field-label" for="loginPassword">
+              Senha
+              <input
+                id="loginPassword"
+                name="password"
+                type="password"
+                autocomplete="current-password"
+                placeholder="Sua senha"
+                class="text-field mt-2"
+                required
+              />
+            </label>
+            <p id="loginMessage" class="notice hidden" role="alert"></p>
+            <button id="loginButton" class="button button-primary w-full" type="submit">
+              Entrar no painel
+            </button>
+            <div class="login-divider" aria-hidden="true"><span>ou</span></div>
+            <button id="googleLoginButton" class="button button-google w-full" type="button">
+              <svg aria-hidden="true" viewBox="0 0 48 48">
+                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z"/>
+                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.72 7.18l7.64 5.92c4.46-4.12 7.12-10.2 7.12-17.57Z"/>
+                <path fill="#FBBC05" d="M10.53 28.59a14.4 14.4 0 0 1 0-9.18l-7.98-6.19a23.9 23.9 0 0 0 0 21.56l7.98-6.19Z"/>
+                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.9-5.88l-7.64-5.92c-2.12 1.42-4.84 2.27-8.26 2.27-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z"/>
+              </svg>
+              Entrar com Google
+            </button>
+          </form>
+          <p class="login-footnote mt-6">
+            Acesso administrativo concedido pelo proprietário do projeto.
+          </p>
+        </div>
+        <p class="login-copyright">Nosso Racha · Administração</p>
+      </section>
+
+      <section id="dashboardView" class="hidden">
+        <header class="topbar">
+          <div class="topbar-inner">
+            <a class="brand-link" href="#" aria-label="Nosso Racha, início">
+              <span class="brand-mark brand-mark-small" aria-hidden="true">NR</span>
+              <span class="brand-name">Nosso Racha</span>
+              <span class="admin-label">ADMIN</span>
+            </a>
+            <div class="account-area">
+              <span id="adminIdentity" class="account-email"></span>
+              <button id="signOutButton" class="button button-quiet" type="button">
+                Sair
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <div class="dashboard-content">
+          <div class="page-heading">
+            <div>
+              <div class="eyebrow">VISÃO GERAL</div>
+              <h1 class="page-title mt-2">Painel administrativo</h1>
+              <p class="muted mt-2">Gerencie cadastros e planos VIP do marketplace.</p>
+            </div>
+            <div class="collection-picker">
+              <label class="field-label" for="collectionSelect">Gerenciar</label>
+              <select id="collectionSelect" class="select-field mt-2">
+                <option value="users">Usuários</option>
+                <option value="groups">Grupos</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="dashboardMessage" class="notice hidden mt-6" role="status"></div>
+
+          <section class="table-card venue-moderation mt-8" aria-labelledby="venueRequestsHeading">
+            <div class="table-card-heading">
+              <div>
+                <h2 id="venueRequestsHeading" class="section-title">Solicitações de novos campos</h2>
+                <p class="muted mt-1">Revise o endereço e informe coordenadas antes de aprovar.</p>
+              </div>
+              <div class="venue-heading-actions">
+                <span id="venueRequestsCount" class="venue-request-count">Carregando…</span>
+                <button id="addVenueButton" class="button button-primary" type="button">
+                  Adicionar campo
+                </button>
+              </div>
+            </div>
+            <div id="venueRequestsList" class="venue-requests-list" aria-live="polite">
+              <p class="empty-state">Carregando solicitações…</p>
+            </div>
+          </section>
+
+          <section class="table-card venue-moderation mt-8" aria-labelledby="venuesHeading">
+            <div class="table-card-heading">
+              <div>
+                <h2 id="venuesHeading" class="section-title">Campos e complexos cadastrados</h2>
+                <p class="muted mt-1">Corrija dados de locais publicados ou remova cadastros duplicados.</p>
+              </div>
+              <span id="venuesCount" class="venue-request-count">Carregando…</span>
+            </div>
+            <div id="venuesList" class="venue-requests-list" aria-live="polite">
+              <p class="empty-state">Carregando locais…</p>
+            </div>
+          </section>
+
+          <div class="stats-grid mt-8">
+            <article class="stat-card">
+              <span class="stat-label">Cadastros</span>
+              <strong id="totalCount" class="stat-value">—</strong>
+              <span class="stat-caption">na coleção selecionada</span>
+            </article>
+            <article class="stat-card">
+              <span id="vipLabel" class="stat-label">Planos ativos</span>
+              <strong id="vipCount" class="stat-value">—</strong>
+              <span class="stat-caption">plano pago ainda não vencido</span>
+            </article>
+            <article class="stat-card stat-card-accent">
+              <span class="stat-label">Conexão</span>
+              <strong id="connectionState" class="stat-value stat-value-status">Conectando</strong>
+              <span class="stat-caption">atualização em tempo real</span>
+            </article>
+          </div>
+
+          <section class="table-card mt-8" aria-labelledby="recordsHeading">
+            <div class="table-card-heading">
+              <div>
+                <h2 id="recordsHeading" class="section-title">Cadastros</h2>
+                <p id="collectionCaption" class="muted mt-1">Dados sincronizados com o Firestore</p>
+              </div>
+              <label class="search-wrap" for="searchInput">
+                <span class="sr-only">Buscar cadastro</span>
+                <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
+                  <circle cx="8.75" cy="8.75" r="5.75" stroke="currentColor" stroke-width="1.6" />
+                  <path d="m13 13 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                </svg>
+                <input id="searchInput" type="search" placeholder="Buscar por nome ou e-mail" />
+              </label>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Nome</th>
+                    <th id="emailHeading" scope="col">E-mail</th>
+                    <th id="planHeading" scope="col">Plano VIP</th>
+                    <th id="expiryHeading" scope="col">Vencimento</th>
+                    <th scope="col">Ações</th>
+                  </tr>
+                </thead>
+                <tbody id="recordsBody">
+                  <tr>
+                    <td colspan="5" class="empty-state">Carregando cadastros…</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="table-footer">
+              <span id="resultCount" class="muted">— cadastros</span>
+              <span class="live-indicator"><span></span> Dados em tempo real</span>
+            </div>
+          </section>
+
+          <p class="security-note mt-5">
+            Enquanto o painel está em testes, qualquer conta autenticada pode
+            alterar planos VIP. Restrinja essa permissão antes de publicar em
+            produção. A renovação de grupos é feita exclusivamente no perfil do
+            organizador. “Aprovar Pix” registra uma aprovação manual, não
+            confirma uma transação bancária.
+          </p>
+        </div>
+      </section>
+
+      <dialog id="recordDetailsDialog" class="record-dialog" aria-labelledby="recordDetailsTitle">
+        <div class="record-dialog-header">
+          <div>
+            <div class="eyebrow">DADOS DO CADASTRO</div>
+            <h2 id="recordDetailsTitle" class="section-title mt-2">Detalhes do usuário</h2>
+          </div>
+          <button
+            id="closeRecordDetailsButton"
+            class="button button-quiet"
+            type="button"
+            aria-label="Fechar detalhes"
+          >
+            Fechar
+          </button>
+        </div>
+        <div id="recordDetailsContent" class="record-details-content"></div>
+      </dialog>
+
+      <dialog id="venueApprovalDialog" class="record-dialog venue-approval-dialog" aria-labelledby="venueApprovalTitle">
+        <form id="venueApprovalForm">
+          <div class="record-dialog-header">
+            <div>
+              <div class="eyebrow">GESTÃO DE LOCAIS</div>
+              <h2 id="venueApprovalTitle" class="section-title mt-2">Aprovar campo</h2>
+            </div>
+            <button id="closeVenueApprovalButton" class="button button-quiet" type="button">
+              Fechar
+            </button>
+          </div>
+          <div class="venue-approval-content">
+            <label class="field-label" for="approvalVenueName">Nome do campo ou complexo</label>
+            <input id="approvalVenueName" class="text-field mt-2" required maxlength="120" />
+            <label id="approvalPlaceSearchLabel" class="field-label mt-5">Buscar no Google Maps</label>
+            <div id="approvalPlaceSearch" class="venue-place-search mt-2"></div>
+            <p id="venuePlaceSearchStatus" class="muted mt-2" role="status"></p>
+            <label class="field-label mt-5" for="approvalVenueAddress">Endereço</label>
+            <textarea id="approvalVenueAddress" class="text-field venue-address-field mt-2" required maxlength="500"></textarea>
+            <div class="venue-cep-lookup mt-5">
+              <label class="field-label" for="approvalVenueCep">
+                Buscar endereço pelo CEP
+                <input id="approvalVenueCep" class="text-field mt-2" type="text" inputmode="numeric" autocomplete="postal-code" maxlength="9" placeholder="00000-000" />
+              </label>
+              <button id="lookupVenueCepButton" class="button button-quiet" type="button">Buscar CEP</button>
+            </div>
+            <p class="muted mt-2">Selecione um resultado do Google Maps para preencher endereço e coordenadas. O CEP preenche o endereço; as coordenadas também podem ser informadas manualmente.</p>
+            <div class="venue-coordinate-grid mt-5">
+              <label class="field-label" for="approvalLatitude">
+                Latitude
+                <input id="approvalLatitude" class="text-field mt-2" type="number" step="any" min="-90" max="90" required />
+              </label>
+              <label class="field-label" for="approvalLongitude">
+                Longitude
+                <input id="approvalLongitude" class="text-field mt-2" type="number" step="any" min="-180" max="180" required />
+              </label>
+            </div>
+            <p id="venueApprovalMessage" class="notice hidden mt-5" role="alert"></p>
+            <div class="venue-approval-actions mt-6">
+              <button id="cancelVenueApprovalButton" class="button button-quiet" type="button">Cancelar</button>
+              <button id="approveVenueButton" class="button button-primary" type="submit">Aprovar e publicar</button>
+            </div>
+          </div>
+        </form>
+      </dialog>
+    </main>
+    <script src="./config.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

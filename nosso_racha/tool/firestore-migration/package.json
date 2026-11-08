@@ -1,0 +1,14 @@
+{
+  "name": "nosso-racha-firestore-migration",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "migrate": "node migrate-firestore.mjs",
+    "initialize-open-event-counter": "node initialize-open-event-counter.mjs",
+    "create-test-users": "node create-test-users.mjs",
+    "test": "node --test migrate-firestore.test.mjs"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.5.0"
+  }
+}

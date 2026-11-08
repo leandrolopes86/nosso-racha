@@ -1,0 +1,1117 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn() && request.auth.token.get('admin', false) == true;
+    }
+
+    function groupPath(groupId) {
+      return /databases/$(database)/documents/groups/$(groupId);
+    }
+
+    function groupMemberPath(groupId, uid) {
+      return /databases/$(database)/documents/groups/$(groupId)/members/$(uid);
+    }
+
+    function groupOwnerId(groupData) {
+      return groupData.get(
+        'owner_id',
+        groupData.get(
+          'ownerId',
+          groupData.get(
+            'organizer_id',
+            groupData.get('organizer_uid', groupData.get('organizerId', null))
+          )
+        )
+      );
+    }
+
+    function isGroupOwner(groupId) {
+      return signedIn()
+        && groupId is string
+        && exists(groupPath(groupId))
+        && groupOwnerId(get(groupPath(groupId)).data) == request.auth.uid;
+    }
+
+    function isGroupOwnerAfter(groupId) {
+      return signedIn()
+        && groupId is string
+        && existsAfter(groupPath(groupId))
+        && groupOwnerId(getAfter(groupPath(groupId)).data) == request.auth.uid;
+    }
+
+    function isGroupMember(groupId) {
+      return signedIn()
+        && groupId is string
+        && (
+          isGroupOwner(groupId)
+          || exists(groupMemberPath(groupId, request.auth.uid))
+        );
+    }
+
+    function isGroupManagerMember(groupId) {
+      return signedIn()
+        && groupId is string
+        && exists(groupMemberPath(groupId, request.auth.uid))
+        && get(groupMemberPath(groupId, request.auth.uid)).data.get(
+          'role',
+          ''
+        ) in ['owner', 'organizer', 'admin', 'co_organizer'];
+    }
+
+    function isGroupManager(groupId) {
+      return isGroupOwner(groupId) || isGroupManagerMember(groupId);
+    }
+
+    function hasActiveVipTier(data) {
+      let vipPlan = data.get('vipPlan', '');
+      let vipExpiresAt = data.get('vipExpiresAt', null);
+      return vipPlan in [
+          'Bronze',
+          'bronze',
+          'Silver',
+          'silver',
+          'Gold',
+          'gold',
+          'Ouro',
+          'ouro',
+          'Prata',
+          'prata',
+          'Platinum',
+          'platinum'
+        ]
+        && vipExpiresAt is timestamp
+        && vipExpiresAt > request.time;
+    }
+
+    function hasActivePlatinumVip(data) {
+      let vipPlan = data.get('vipPlan', '');
+      let vipExpiresAt = data.get('vipExpiresAt', null);
+      return vipPlan in ['Platinum', 'platinum']
+        && vipExpiresAt is timestamp
+        && vipExpiresAt > request.time;
+    }
+
+    function hasActiveOrganizerVipPlan(uid) {
+      let owner = get(
+        /databases/$(database)/documents/users/$(uid)
+      ).data;
+      let subscription = owner.get('subscription', {});
+      let status = subscription.get(
+        'status',
+        owner.get('plan_status', null)
+      );
+      let expiresAt = subscription.get(
+        'expires_at',
+        owner.get('plan_expires_at', null)
+      );
+      return owner.get('status', 'active') == 'active'
+        && (
+          hasActivePlatinumVip(owner)
+          || (
+            owner.get('plan', 'free') == 'organizer_vip'
+            && status in ['active', 'trialing']
+            && expiresAt is timestamp
+            && expiresAt > request.time
+          )
+        );
+    }
+
+    function hasActiveGroupVipPlan(groupId) {
+      let group = get(groupPath(groupId)).data;
+      let ownerId = groupOwnerId(group);
+      let owner = get(
+        /databases/$(database)/documents/users/$(ownerId)
+      ).data;
+      return owner.get('status', 'active') == 'active'
+        && (
+          hasActivePlatinumVip(group)
+          || hasActiveOrganizerVipPlan(ownerId)
+        );
+    }
+
+    function canUseGroupFeature(groupId) {
+      return signedIn()
+        && groupId is string
+        && exists(groupPath(groupId))
+        && isGroupManager(groupId)
+        && hasActiveGroupVipPlan(groupId);
+    }
+
+    function eventGroupId(eventData) {
+      let info = eventData.get('info', {});
+      return info.get('group_id', eventData.get('group_id', null));
+    }
+
+    function isOpenEvent(eventData) {
+      let info = eventData.get('info', {});
+      let status = info.get('status', eventData.get('status', ''));
+      return status in [
+        'scheduled',
+        'published',
+        'open',
+        'active',
+        'in_progress'
+      ];
+    }
+
+    function canCreateEvent(eventData) {
+      let groupId = eventGroupId(eventData);
+      let user = get(
+        /databases/$(database)/documents/users/$(request.auth.uid)
+      ).data;
+      return signedIn()
+        && groupId is string
+        && exists(groupPath(groupId))
+        && (
+          isGroupManager(groupId)
+          || hasActiveOrganizerVipPlan(request.auth.uid)
+          || user.get('permissions', {}).get('can_create_event', false) == true
+        );
+    }
+
+    function hasEventCounterChange(groupId, eventId, delta) {
+      let groupBefore = get(groupPath(groupId)).data;
+      let groupAfter = getAfter(groupPath(groupId)).data;
+      let eventPath = /databases/$(database)/documents/events/$(eventId);
+      let beforeExists = exists(eventPath);
+      let afterExists = existsAfter(eventPath);
+      let openBefore = beforeExists && isOpenEvent(get(eventPath).data);
+      let openAfter = afterExists && isOpenEvent(getAfter(eventPath).data);
+      let currentCount = groupBefore.get('open_events_count', 0);
+      let nextCount = groupAfter.get('open_events_count', 0);
+      let ownerId = groupOwnerId(groupBefore);
+
+      return groupId is string
+        && eventId is string
+        && existsAfter(groupPath(groupId))
+        && groupAfter.get('capacity_event_id', null) == eventId
+        && groupAfter.get('capacity_event_delta', 0) == delta
+        && groupAfter.get('capacity_event_nonce', null) is string
+        && groupAfter.get('capacity_event_nonce', null)
+          != groupBefore.get('capacity_event_nonce', null)
+        && currentCount is int
+        && nextCount == currentCount + delta
+        && (
+          (delta == 1 && !openBefore && openAfter)
+          || (delta == -1 && openBefore && !openAfter)
+        )
+        && (
+          hasActiveOrganizerVipPlan(ownerId)
+          || hasActiveGroupVipPlan(groupId)
+          || nextCount <= 3
+        );
+    }
+
+    function hasValidEventCounterFields(groupId) {
+      let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+      let eventId = request.resource.data.get('capacity_event_id', null);
+      let delta = request.resource.data.get('capacity_event_delta', 0);
+      return changedKeys.hasAny([
+          'open_events_count',
+          'capacity_event_id',
+          'capacity_event_delta',
+          'capacity_event_nonce'
+        ])
+        && delta in [-1, 1]
+        && canUpdateEventCounter(groupId, eventId, delta)
+        && hasEventCounterChange(groupId, eventId, delta);
+    }
+
+    function canUpdateEventCounter(groupId, eventId, delta) {
+      let eventPath = /databases/$(database)/documents/events/$(eventId);
+      let eventData = delta == 1
+        ? getAfter(eventPath).data
+        : get(eventPath).data;
+      let creatorId = eventData.get('audit', {}).get('created_by', null);
+      return signedIn()
+        && eventGroupId(eventData) == groupId
+        && (
+          creatorId == request.auth.uid
+          || isGroupOwner(groupId)
+          || isGroupManagerMember(groupId)
+        );
+    }
+
+    function hasEventStatusCounterChange(eventId, beforeData, afterData) {
+      let groupId = eventGroupId(beforeData);
+      let delta = isOpenEvent(afterData) ? 1 : -1;
+      return eventGroupId(afterData) == groupId
+        && hasEventCounterChange(groupId, eventId, delta);
+    }
+
+    function hasActiveUserVipPlan(uid) {
+      let user = get(
+        /databases/$(database)/documents/users/$(uid)
+      ).data;
+      let subscription = user.get('subscription', {});
+      let status = subscription.get(
+        'status',
+        user.get('plan_status', null)
+      );
+      let expiresAt = subscription.get(
+        'expires_at',
+        user.get('plan_expires_at', null)
+      );
+      return user.get('status', 'active') == 'active'
+        && (
+          hasActiveVipTier(user)
+          || (
+            user.get('plan', 'free') in ['athlete_vip', 'organizer_vip']
+            && status in ['active', 'trialing']
+            && expiresAt is timestamp
+            && expiresAt > request.time
+          )
+        );
+    }
+
+    function hasValidMemberCounts(groupId, role, delta) {
+      let groupBefore = get(groupPath(groupId)).data;
+      let groupAfter = getAfter(groupPath(groupId)).data;
+      return groupBefore.get('athlete_count', 0) is int
+        && groupBefore.get('co_organizer_count', 0) is int
+        && groupAfter.get('athlete_count', 0)
+          == groupBefore.get('athlete_count', 0)
+            + (role == 'member' ? delta : 0)
+        && groupAfter.get('co_organizer_count', 0)
+          == groupBefore.get('co_organizer_count', 0)
+            + (role == 'co_organizer' ? delta : 0)
+        && (
+          hasActiveGroupVipPlan(groupId)
+          || (
+            role == 'member'
+              ? groupAfter.get('athlete_count', 0) <= 40
+              : groupAfter.get('co_organizer_count', 0) <= 3
+          )
+        );
+    }
+
+    function hasValidMemberAddition(groupId, uid, role) {
+      return existsAfter(groupMemberPath(groupId, uid))
+        && getAfter(groupMemberPath(groupId, uid)).data.get('uid', null) == uid
+        && getAfter(groupMemberPath(groupId, uid)).data.get('role', null) == role
+        && getAfter(
+          /databases/$(database)/documents/users/$(uid)
+        ).data.get('group_ids', []).hasAny([groupId])
+        && getAfter(
+          /databases/$(database)/documents/users/$(uid)
+        ).data.get('membership_change_group_id', null) == groupId
+        && getAfter(
+          /databases/$(database)/documents/users/$(uid)
+        ).data.get('membership_change_nonce', null)
+          == getAfter(groupPath(groupId)).data.get('capacity_member_nonce', null)
+        && !get(
+          /databases/$(database)/documents/users/$(uid)
+        ).data.get('group_ids', []).hasAny([groupId])
+        && (
+          hasActiveUserVipPlan(uid)
+            ? getAfter(
+              /databases/$(database)/documents/users/$(uid)
+            ).data.get('group_ids', []).size() <= 10
+            : getAfter(
+              /databases/$(database)/documents/users/$(uid)
+            ).data.get('group_ids', []).size() <= 2
+        );
+    }
+
+    function hasValidMemberRemoval(groupId, uid) {
+      return exists(groupMemberPath(groupId, uid))
+        && !existsAfter(groupMemberPath(groupId, uid))
+        && !getAfter(
+          /databases/$(database)/documents/users/$(uid)
+        ).data.get('group_ids', []).hasAny([groupId])
+        && (
+          get(
+            /databases/$(database)/documents/users/$(uid)
+          ).data.get('group_ids', []).hasAny([groupId])
+          || get(
+            /databases/$(database)/documents/users/$(uid)
+          ).data.get('group_id', null) == groupId
+        )
+        && getAfter(
+          /databases/$(database)/documents/users/$(uid)
+        ).data.get('membership_change_group_id', null) == groupId
+        && getAfter(
+          /databases/$(database)/documents/users/$(uid)
+        ).data.get('membership_change_nonce', null)
+          == getAfter(groupPath(groupId)).data.get('capacity_member_nonce', null);
+    }
+
+    function hasValidMemberCounterChange(groupId, uid, role, delta) {
+      let groupBefore = get(groupPath(groupId)).data;
+      let groupAfter = getAfter(groupPath(groupId)).data;
+      return groupId is string
+        && uid is string
+        && role in ['member', 'co_organizer']
+        && delta in [-1, 1]
+        && groupAfter.get('capacity_member_uid', null) == uid
+        && groupAfter.get('capacity_member_role', null) == role
+        && groupAfter.get('capacity_member_delta', 0) == delta
+        && groupAfter.get('capacity_member_nonce', null) is string
+        && groupAfter.get('capacity_member_nonce', null)
+          != groupBefore.get('capacity_member_nonce', null)
+        && hasValidMemberCounts(groupId, role, delta)
+        && (
+          (delta == 1 && hasValidMemberAddition(groupId, uid, role))
+          || (delta == -1 && hasValidMemberRemoval(groupId, uid))
+        );
+    }
+
+    function hasValidMemberCounterFields(groupId) {
+      let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+      let uid = request.resource.data.get('capacity_member_uid', null);
+      let role = request.resource.data.get('capacity_member_role', null);
+      let delta = request.resource.data.get('capacity_member_delta', 0);
+      return changedKeys.hasAny([
+          'athlete_count',
+          'co_organizer_count',
+          'capacity_member_uid',
+          'capacity_member_role',
+          'capacity_member_delta',
+          'capacity_member_nonce'
+        ])
+        && hasValidMemberCounterChange(groupId, uid, role, delta);
+    }
+
+    function hasValidEventAccess(eventId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/events/$(eventId)/access/$(request.auth.uid));
+    }
+
+    function canReadEvent(eventId, eventData) {
+      let info = eventData.get('info', {});
+      let visibility = info.get('visibility', 'public');
+      let groupId = eventGroupId(eventData);
+      let creatorId = eventData.get('audit', {}).get('created_by', null);
+      return visibility in ['public', 'moderated']
+        || (signedIn()
+          && (
+            creatorId == request.auth.uid
+            || isGroupMember(groupId)
+            || hasValidEventAccess(eventId)
+          ));
+    }
+
+    function canManageEvent(eventData) {
+      let groupId = eventGroupId(eventData);
+      let creatorId = eventData.get('audit', {}).get('created_by', null);
+      return signedIn()
+        && (
+          creatorId == request.auth.uid
+          || isGroupOwner(groupId)
+          || isGroupManagerMember(groupId)
+        );
+    }
+
+    function hasValidSelfParticipantAppend(eventId, eventData) {
+      let oldParticipants = resource.data.get('participants', []);
+      let newParticipants = request.resource.data.get('participants', []);
+      let newParticipant = newParticipants[newParticipants.size() - 1];
+      let groupId = eventGroupId(eventData);
+      return signedIn()
+        && (isGroupMember(groupId) || hasValidEventAccess(eventId))
+        && oldParticipants is list
+        && newParticipants is list
+        && newParticipants.size() == oldParticipants.size() + 1
+        && newParticipants.hasAll(oldParticipants)
+        && newParticipant is map
+        && newParticipant.get('uid', null) == request.auth.uid
+        && newParticipant.get('status', 'active') in ['active', 'queue']
+        && newParticipant.get('role_in_match', 'line') in ['line', 'goalkeeper']
+        && newParticipant.get('is_external', false) == false
+        && newParticipant.get('is_staff', false)
+          == isGroupManager(groupId)
+        && newParticipant.get('is_guest', false) == false
+        && newParticipant.get('payment_status', 'pending') == 'pending'
+        && newParticipant.get('payment_gateway_id', null) == null
+        && newParticipant.get('attendance', 'pending') == 'pending'
+        && newParticipant.get('is_avulso', false) == false;
+    }
+
+    function hasValidJoinRequestProfile(uid) {
+      let userPath = /databases/$(database)/documents/users/$(uid);
+      let userData = get(userPath).data;
+      let personalInfo = userData.get('personal_info', {});
+      let footballStats = userData.get('football_stats', {});
+      let paymentInfo = userData.get('payment_info', {});
+      let profile = request.resource.data.get('profile', {});
+      return exists(userPath)
+        && profile is map
+        && profile.keys().hasOnly([
+          'name',
+          'nickname',
+          'phone',
+          'positions',
+          'rating',
+          'pix_key',
+          'can_play_multiple_positions'
+        ])
+        && profile.keys().hasAll([
+          'name',
+          'nickname',
+          'phone',
+          'positions',
+          'rating',
+          'pix_key',
+          'can_play_multiple_positions'
+        ])
+        && profile.get('name', null) == personalInfo.get('full_name', '')
+        && profile.get('nickname', null) == footballStats.get('nickname', '')
+        && profile.get('phone', null) == personalInfo.get('phone_raw', '')
+        && profile.get('positions', null) == footballStats.get('positions', [])
+        && profile.get('rating', null) == footballStats.get('rating', 0)
+        && profile.get('pix_key', null) == paymentInfo.get('pix_key', '')
+        && profile.get('can_play_multiple_positions', null)
+          == (
+            userData.get('role', 'athlete') in ['master', 'org']
+            || userData.get('is_owner', false) == true
+            || userData.get('plan', 'free')
+              in ['athlete_vip', 'organizer_vip']
+            || hasActiveVipTier(userData)
+          );
+    }
+
+    function isPrivateEvent(eventData) {
+      return eventData.get('info', {}).get('visibility', 'public') == 'private';
+    }
+
+    function isEventCreator(eventData) {
+      return signedIn()
+        && eventData.get('audit', {}).get('created_by', null) == request.auth.uid;
+    }
+
+    function canReadEventSubcollection(eventId) {
+      return canReadEvent(
+        eventId,
+        get(/databases/$(database)/documents/events/$(eventId)).data
+      );
+    }
+
+    function canManageEventSubcollection(eventId) {
+      return canManageEvent(
+        get(/databases/$(database)/documents/events/$(eventId)).data
+      );
+    }
+
+    function inviteIsValid(eventId, token) {
+      let invitePath = /databases/$(database)/documents/events/$(eventId)/invites/$(token);
+      return token is string
+        && exists(invitePath)
+        && get(invitePath).data.active == true
+        && get(invitePath).data.expires_at > request.time;
+    }
+
+    function canReadInvite(eventId, token) {
+      let invitePath = /databases/$(database)/documents/events/$(eventId)/invites/$(token);
+      return signedIn()
+        && (
+          !exists(invitePath)
+          || (
+            resource.data.active == true
+            && resource.data.expires_at > request.time
+          )
+        );
+    }
+
+    match /events/{eventId} {
+      allow get, list: if canReadEvent(eventId, resource.data);
+      allow create: if isEventCreator(request.resource.data)
+        && canCreateEvent(request.resource.data)
+        && (
+          !isOpenEvent(request.resource.data)
+          || hasEventCounterChange(
+            eventGroupId(request.resource.data),
+            eventId,
+            1
+          )
+        );
+      allow update: if canManageEvent(resource.data)
+          && request.resource.data.get('audit', {}).get('created_by', null)
+            == resource.data.get('audit', {}).get('created_by', null)
+          && (
+            isOpenEvent(resource.data) == isOpenEvent(request.resource.data)
+            || hasEventStatusCounterChange(
+              eventId,
+              resource.data,
+              request.resource.data
+            )
+          )
+        || request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['participants'])
+          && hasValidSelfParticipantAppend(eventId, resource.data);
+      allow delete: if canManageEvent(resource.data)
+        && (
+          !isOpenEvent(resource.data)
+          || hasEventCounterChange(eventGroupId(resource.data), eventId, -1)
+        );
+
+      match /join_requests/{uid} {
+        allow get: if signedIn()
+          && (request.auth.uid == uid || canManageEventSubcollection(eventId));
+        allow list: if canManageEventSubcollection(eventId);
+        allow create: if signedIn()
+          && request.auth.uid == uid
+          && request.resource.data.get('uid', null) == uid
+          && request.resource.data.get('status', null) == 'pending'
+          && request.resource.data.get('role_in_match', '') in [
+            'line',
+            'goalkeeper'
+          ]
+          && request.resource.data.get('requested_at', null) is timestamp
+          && (
+            !request.resource.data.keys().hasAny(['profile'])
+            || hasValidJoinRequestProfile(uid)
+          )
+          && canReadEventSubcollection(eventId);
+        allow update: if (
+            canManageEventSubcollection(eventId)
+            && request.resource.data.get('uid', null) == uid
+          )
+          || (
+            signedIn()
+            && request.auth.uid == uid
+            && resource.data.get('status', null) == 'rejected'
+            && request.resource.data.keys().hasOnly([
+              'uid',
+              'name',
+              'nickname',
+              'role_in_match',
+              'status',
+              'requested_at',
+              'profile'
+            ])
+            && request.resource.data.get('uid', null) == uid
+            && request.resource.data.get('status', null) == 'pending'
+            && request.resource.data.get('role_in_match', '') in [
+              'line',
+              'goalkeeper'
+            ]
+            && request.resource.data.get('requested_at', null) is timestamp
+            && hasValidJoinRequestProfile(uid)
+          );
+        allow delete: if signedIn()
+          && (request.auth.uid == uid || canManageEventSubcollection(eventId));
+      }
+
+      match /invites/{token} {
+        allow get: if canReadInvite(eventId, token);
+        allow list: if false;
+        allow create: if isPrivateEvent(get(/databases/$(database)/documents/events/$(eventId)).data)
+          && canManageEvent(get(/databases/$(database)/documents/events/$(eventId)).data)
+          && request.resource.data.created_by == request.auth.uid
+          && request.resource.data.active == true
+          && request.resource.data.expires_at > request.time
+          && request.resource.data.expires_at <= request.time + duration.value(7, 'd');
+        allow update, delete: if canManageEvent(get(/databases/$(database)/documents/events/$(eventId)).data);
+      }
+
+      match /access/{uid} {
+        allow get: if signedIn()
+          && request.auth.uid == uid;
+        allow list: if false;
+        allow create: if signedIn()
+          && request.auth.uid == uid
+          && inviteIsValid(eventId, request.resource.data.invite_token);
+        allow update: if false;
+        allow delete: if false;
+      }
+
+      match /pending_payments/{uid} {
+        allow get: if canReadEventSubcollection(eventId)
+          && (request.auth.uid == uid || canManageEventSubcollection(eventId));
+        allow list: if canManageEventSubcollection(eventId);
+        allow create, update: if canReadEventSubcollection(eventId)
+          && request.auth.uid == uid;
+        allow delete: if canReadEventSubcollection(eventId)
+          && (request.auth.uid == uid || canManageEventSubcollection(eventId));
+      }
+
+      match /goalie_payments/{uid} {
+        allow get: if signedIn()
+          && (request.auth.uid == uid || canManageEventSubcollection(eventId));
+        allow list: if false;
+        allow create: if (
+            request.resource.data.get('uid', null) == uid
+            && request.resource.data.get('goalie_payment_status', null) == 'none'
+            && request.resource.data.keys().hasOnly([
+              'uid',
+              'pix_key',
+              'goalie_payment_status'
+            ])
+            && (
+              (signedIn() && request.auth.uid == uid)
+              || canManageEventSubcollection(eventId)
+            )
+          )
+          || (
+            canManageEventSubcollection(eventId)
+            && request.resource.data.get('uid', null) == uid
+            && request.resource.data.get('pix_key', null) is string
+            && request.resource.data.get('goalie_payment_status', null)
+              == 'pending_confirmation'
+            && request.resource.data.get('marked_by_uid', null)
+              == request.auth.uid
+            && request.resource.data.get('transaction_id', null) is string
+            && existsAfter(
+              /databases/$(database)/documents/transactions/$(request.resource.data.get('transaction_id', ''))
+            )
+            && getAfter(
+              /databases/$(database)/documents/transactions/$(request.resource.data.get('transaction_id', ''))
+            ).data.get('related_user_id', null) == uid
+            && getAfter(
+              /databases/$(database)/documents/transactions/$(request.resource.data.get('transaction_id', ''))
+            ).data.get('category', null) == 'goalkeeper_payment'
+            && getAfter(
+              /databases/$(database)/documents/transactions/$(request.resource.data.get('transaction_id', ''))
+            ).data.get('amount', null)
+              == request.resource.data.get('amount', null)
+          );
+        allow update: if (
+            canManageEventSubcollection(eventId)
+            && resource.data.get('goalie_payment_status', 'none') == 'none'
+            && request.resource.data.get('goalie_payment_status', null)
+              == 'pending_confirmation'
+            && request.resource.data.get('uid', null) == uid
+            && request.resource.data.get('pix_key', null)
+              == resource.data.get('pix_key', null)
+            && request.resource.data.get('transaction_id', null) is string
+            && request.resource.data.get('marked_by_uid', null)
+              == request.auth.uid
+            && existsAfter(
+              /databases/$(database)/documents/transactions/$(request.resource.data.get('transaction_id', ''))
+            )
+            && getAfter(
+              /databases/$(database)/documents/transactions/$(request.resource.data.get('transaction_id', ''))
+            ).data.get('related_user_id', null) == uid
+            && getAfter(
+              /databases/$(database)/documents/transactions/$(request.resource.data.get('transaction_id', ''))
+            ).data.get('category', null) == 'goalkeeper_payment'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'goalie_payment_status',
+              'amount',
+              'marked_at',
+              'marked_by_uid',
+              'marked_by_name',
+              'transaction_id'
+            ])
+          )
+          || (
+            signedIn()
+            && request.auth.uid == uid
+            && resource.data.get('goalie_payment_status', 'none') == 'none'
+            && request.resource.data.get('goalie_payment_status', 'none') == 'none'
+            && request.resource.data.get('uid', null) == uid
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['pix_key'])
+          )
+          || (
+            signedIn()
+            && request.auth.uid == uid
+            && resource.data.get('goalie_payment_status', null)
+              == 'pending_confirmation'
+            && request.resource.data.get('goalie_payment_status', null)
+              == 'confirmed'
+            && request.resource.data.get('uid', null) == uid
+            && request.resource.data.get('pix_key', null)
+              == resource.data.get('pix_key', null)
+            && request.resource.data.get('confirmed_at', null) == request.time
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['goalie_payment_status', 'confirmed_at'])
+          );
+        allow delete: if false;
+      }
+
+      match /matches/{matchId} {
+        allow read: if canReadEventSubcollection(eventId);
+        allow write: if canManageEventSubcollection(eventId);
+      }
+
+      match /{subcollection}/{document=**} {
+        allow read: if canReadEventSubcollection(eventId)
+          && subcollection != 'invites'
+          && subcollection != 'access'
+          && subcollection != 'pending_payments'
+          && subcollection != 'goalie_payments'
+          && subcollection != 'join_requests'
+          && subcollection != 'matches';
+        allow write: if canManageEventSubcollection(eventId)
+          && subcollection != 'invites'
+          && subcollection != 'access'
+          && subcollection != 'pending_payments'
+          && subcollection != 'goalie_payments'
+          && subcollection != 'join_requests'
+          && subcollection != 'matches';
+      }
+    }
+
+    match /groups/{groupId} {
+      allow read: if signedIn();
+      allow create: if isAdmin()
+        || (
+          signedIn()
+          && request.resource.data.owner_id == request.auth.uid
+          && hasActiveOrganizerVipPlan(request.auth.uid)
+        );
+      allow update: if groupOwnerId(request.resource.data)
+          == groupOwnerId(resource.data)
+        && (
+          (
+            isGroupOwner(groupId)
+            && (
+              !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny([
+                  'open_events_count',
+                  'capacity_event_id',
+                  'capacity_event_delta',
+                  'capacity_event_nonce'
+                ])
+              || hasValidEventCounterFields(groupId)
+            )
+            && (
+              !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny([
+                  'athlete_count',
+                  'co_organizer_count',
+                  'capacity_member_uid',
+                  'capacity_member_role',
+                  'capacity_member_delta',
+                  'capacity_member_nonce'
+                ])
+              || hasValidMemberCounterFields(groupId)
+            )
+          )
+          || (
+            isGroupManager(groupId)
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['name', 'city', 'neighborhood', 'updated_at'])
+          )
+          || (
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly([
+                'open_events_count',
+                'capacity_event_id',
+                'capacity_event_delta',
+                'capacity_event_nonce'
+              ])
+            && hasValidEventCounterFields(groupId)
+          )
+        );
+      allow delete: if isGroupOwner(groupId);
+
+      match /members/{uid} {
+        allow get: if signedIn()
+          && (request.auth.uid == uid || isGroupOwner(groupId));
+        allow list: if isGroupOwner(groupId);
+        allow create: if signedIn()
+          && (
+            isGroupOwner(groupId)
+            || isGroupOwnerAfter(groupId)
+          )
+          && request.resource.data.uid == uid
+          && request.resource.data.role in ['owner', 'member', 'co_organizer'];
+        allow update: if isGroupOwner(groupId)
+          && request.resource.data.uid == uid
+          && request.resource.data.role in ['member', 'co_organizer'];
+        allow delete: if isGroupOwner(groupId)
+          && resource.data.role != 'owner';
+      }
+
+      match /settings/{settingId} {
+        allow read: if settingId != 'payment_gateway'
+          && isGroupManager(groupId);
+        allow write: if settingId != 'payment_gateway'
+          && canUseGroupFeature(groupId);
+      }
+
+      match /{subcollection}/{document=**} {
+        allow read: if isGroupMember(groupId)
+          && subcollection != 'members'
+          && subcollection != 'settings';
+        allow write: if isGroupManager(groupId)
+          && subcollection != 'members'
+          && subcollection != 'settings';
+      }
+    }
+
+    match /users/{uid} {
+      allow get, list: if signedIn()
+        && (request.auth.uid == uid || isAdmin());
+      allow create: if isAdmin() || (
+        signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.get('role', 'athlete') == 'athlete'
+        && request.resource.data.get('status', 'active') == 'active'
+        && request.resource.data.get('plan', 'free') == 'free'
+        && request.resource.data.get('is_owner', false) == false
+        && request.resource.data.get('permissions', {}).keys().hasOnly([])
+        && request.resource.data.get('group_ids', []).hasOnly([])
+        && hasValidFreeAthleteProfile(request.resource.data)
+      );
+      allow update: if isAdmin()
+        || canUpdateOwnUserProfile(uid)
+        || canUpdateUserStatus(uid)
+        || canUpdateGroupMembership(uid);
+      allow delete: if isAdmin();
+    }
+
+    function canUpdateOwnUserProfile(uid) {
+      let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+      let personalInfo = request.resource.data.get('personal_info', {});
+      let footballStats = request.resource.data.get('football_stats', {});
+      let previousFootballStats = resource.data.get('football_stats', {});
+      let paymentInfo = request.resource.data.get('payment_info', {});
+      let previousPaymentInfo = resource.data.get('payment_info', {});
+      return signedIn()
+        && request.auth.uid == uid
+        && changedKeys.hasOnly([
+          'personal_info',
+          'football_stats',
+          'payment_info'
+        ])
+        && personalInfo is map
+        && personalInfo.keys().hasOnly([
+          'full_name',
+          'phone_raw',
+          'birth_date'
+        ])
+        && (!changedKeys.hasAny(['football_stats'])
+          || footballStats.diff(previousFootballStats)
+            .affectedKeys().hasOnly(['nickname', 'positions']))
+        && (!changedKeys.hasAny(['payment_info'])
+          || paymentInfo.diff(previousPaymentInfo)
+            .affectedKeys().hasOnly(['pix_key']))
+        && (
+          !changedKeys.hasAny(['football_stats', 'payment_info'])
+          || hasValidFreeAthleteProfile(request.resource.data)
+        );
+    }
+
+    function hasValidFreeAthleteProfile(userData) {
+      let footballStats = userData.get('football_stats', {});
+      let positions = footballStats.get('positions', []);
+      return footballStats is map
+        && positions is list
+        && positions.size() > 0
+        && positions.hasOnly([
+          'Goleiro',
+          'Zagueiro',
+          'Meio-campo',
+          'Atacante'
+        ])
+        && (
+          userData.get('plan', 'free') != 'free'
+          || positions.size() == 1
+        );
+    }
+
+    function canUpdateUserStatus(uid) {
+      let actor = get(
+        /databases/$(database)/documents/users/$(request.auth.uid)
+      ).data;
+      let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+      return signedIn()
+        && request.auth.uid != uid
+        && actor.get('permissions', {}).get('can_register_user', false) == true
+        && changedKeys.hasOnly(['status'])
+        && request.resource.data.get('status', null) in [
+          'active',
+          'inactive',
+          'suspended'
+        ];
+    }
+
+    function canUpdateGroupMembership(uid) {
+      let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+      let groupId = request.resource.data.get(
+        'membership_change_group_id',
+        ''
+      );
+      let groupMember = groupMemberPath(groupId, uid);
+      let groupAfter = groupPath(groupId);
+      let addedMember =
+        request.resource.data.get('group_ids', []).hasAny([groupId])
+        && !resource.data.get('group_ids', []).hasAny([groupId]);
+      let removedMember =
+        !request.resource.data.get('group_ids', []).hasAny([groupId])
+        && (
+          resource.data.get('group_ids', []).hasAny([groupId])
+          || resource.data.get('group_id', null) == groupId
+        );
+
+      return signedIn()
+        && changedKeys.hasOnly([
+          'group_ids',
+          'group_id',
+          'last_removed_group_id',
+          'last_membership_change_nonce',
+          'membership_change_group_id',
+          'membership_change_nonce'
+        ])
+        && groupId is string
+        && groupId != ''
+        && request.resource.data.get('membership_change_nonce', null) is string
+        && existsAfter(groupAfter)
+        && request.resource.data.get('group_ids', []).hasAny([groupId])
+          && !resource.data.get('group_ids', []).hasAny([groupId])
+          && isGroupOwnerAfter(groupId)
+          && existsAfter(groupMember)
+          && request.auth.uid == uid
+          && getAfter(groupMember).data.get('uid', null) == uid
+          && getAfter(groupMember).data.get('role', '') == 'owner'
+        || (
+          signedIn()
+          && changedKeys.hasOnly([
+            'group_ids',
+            'group_id',
+            'last_removed_group_id',
+            'last_membership_change_nonce',
+            'membership_change_group_id',
+            'membership_change_nonce'
+          ])
+          && groupId is string
+          && groupId != ''
+          && request.resource.data.get('membership_change_nonce', null) is string
+          && exists(groupPath(groupId))
+          && isGroupOwner(groupId)
+          && getAfter(groupAfter).data.get('capacity_member_uid', null) == uid
+          && getAfter(groupAfter).data.get(
+            'capacity_member_nonce',
+            null
+          ) == request.resource.data.get('membership_change_nonce', null)
+          && (
+            (
+              getAfter(groupAfter).data.get('capacity_member_delta', 0) == 1
+              && addedMember
+              && existsAfter(groupMember)
+              && getAfter(groupMember).data.get('uid', null) == uid
+            )
+            || (
+              getAfter(groupAfter).data.get('capacity_member_delta', 0) == -1
+              && removedMember
+              && !existsAfter(groupMember)
+            )
+          )
+        );
+    }
+
+    match /transactions/{transactionId} {
+      allow read: if canUseGroupFeature(resource.data.get('group_id', null));
+      allow create: if canUseGroupFeature(
+        request.resource.data.get('group_id', null)
+      )
+        && (
+          request.resource.data.get('category', '') != 'goalkeeper_payment'
+          || (
+            request.resource.data.get('type', null) == 'debit'
+            && request.resource.data.get('related_event_id', null) is string
+            && request.resource.data.get('related_user_id', null) is string
+            && existsAfter(
+              /databases/$(database)/documents/events/$(request.resource.data.get('related_event_id', ''))/goalie_payments/$(request.resource.data.get('related_user_id', ''))
+            )
+            && getAfter(
+              /databases/$(database)/documents/events/$(request.resource.data.get('related_event_id', ''))/goalie_payments/$(request.resource.data.get('related_user_id', ''))
+            ).data.get('goalie_payment_status', null) == 'pending_confirmation'
+            && getAfter(
+              /databases/$(database)/documents/events/$(request.resource.data.get('related_event_id', ''))/goalie_payments/$(request.resource.data.get('related_user_id', ''))
+            ).data.get('transaction_id', null) == transactionId
+            && getAfter(
+              /databases/$(database)/documents/events/$(request.resource.data.get('related_event_id', ''))/goalie_payments/$(request.resource.data.get('related_user_id', ''))
+            ).data.get('amount', null)
+              == request.resource.data.get('amount', null)
+            && request.resource.data.get('registered_by_uid', null)
+              == request.auth.uid
+            &&             eventGroupId(getAfter(
+              /databases/$(database)/documents/events/$(request.resource.data.get('related_event_id', ''))
+            ).data)
+              == request.resource.data.get('group_id', null)
+          )
+        );
+      allow update, delete: if canUseGroupFeature(
+        resource.data.get('group_id', null)
+      )
+        && request.resource.data.get('group_id', null)
+          == resource.data.get('group_id', null);
+    }
+
+    match /closings/{closingId} {
+      allow read: if canUseGroupFeature(resource.data.get('group_id', null));
+      allow create: if canUseGroupFeature(
+        request.resource.data.get('group_id', null)
+      );
+      allow update, delete: if false;
+    }
+
+    match /settings/{settingId} {
+      allow read, write: if signedIn() && settingId != 'payment_gateway';
+    }
+
+    match /venues/{venueId} {
+      allow read: if signedIn();
+      allow create, update: if isAdmin()
+        && request.resource.data.get('name', null) is string
+        && request.resource.data.get('name', '').size() >= 2
+        && request.resource.data.get('name', '').size() <= 120
+        && request.resource.data.get('address', null) is string
+        && request.resource.data.get('address', '').size() >= 5
+        && request.resource.data.get('address', '').size() <= 500
+        && request.resource.data.get('status', null) == 'approved'
+        && request.resource.data.get('latitude', null) is number
+        && request.resource.data.get('latitude', 999) >= -90
+        && request.resource.data.get('latitude', 999) <= 90
+        && request.resource.data.get('longitude', null) is number
+        && request.resource.data.get('longitude', 999) >= -180
+        && request.resource.data.get('longitude', 999) <= 180;
+      allow delete: if isAdmin();
+    }
+
+    match /pending_venues/{requestId} {
+      allow get, list: if isAdmin();
+      allow create: if signedIn()
+        && request.resource.data.get('created_by', null) == request.auth.uid
+        && request.resource.data.get('status', null) == 'pending'
+        && request.resource.data.get('name', null) is string
+        && request.resource.data.get('name', '').size() >= 2
+        && request.resource.data.get('name', '').size() <= 120
+        && request.resource.data.get('address', null) is string
+        && request.resource.data.get('address', '').size() >= 5
+        && request.resource.data.get('address', '').size() <= 500
+        && request.resource.data.get('created_at', null) is timestamp
+        && request.resource.data.keys().hasOnly([
+          'name',
+          'address',
+          'created_by',
+          'requester_name',
+          'requester_email',
+          'status',
+          'created_at'
+        ]);
+      allow update, delete: if isAdmin();
+    }
+
+    match /{path=**}/members/{uid} {
+      allow get: if signedIn()
+        && uid == request.auth.uid
+        && resource.data.uid == request.auth.uid;
+      allow list: if signedIn()
+        && resource.data.uid == request.auth.uid;
+    }
+
+    // Keep the pre-existing authenticated access for all other collections.
+    match /{collection}/{document=**} {
+      allow read, write: if signedIn()
+        && collection != 'events'
+        && collection != 'groups'
+        && collection != 'users'
+        && collection != 'transactions'
+        && collection != 'closings'
+        && collection != 'settings'
+        && collection != 'venues'
+        && collection != 'pending_venues';
+    }
+  }
+}

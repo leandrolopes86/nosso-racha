@@ -1,0 +1,30 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "nosso-racha",
+          "appId": "1:929254524935:android:c802bf3506746c810f02a2",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "nosso-racha",
+          "configurations": {
+            "android": "1:929254524935:android:c802bf3506746c810f02a2",
+            "ios": "1:929254524935:ios:15b51911fe9991c50f02a2",
+            "web": "1:929254524935:web:5b221c6edf2a3be40f02a2",
+            "windows": "1:929254524935:web:462ae3a6b275d6a70f02a2"
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "database": "(default)",
+    "location": "southamerica-east1",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}

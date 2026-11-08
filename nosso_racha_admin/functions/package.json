@@ -1,0 +1,10 @@
+{
+  "name": "nosso-racha-admin-functions",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0"
+  }
+}

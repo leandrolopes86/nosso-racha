@@ -1,0 +1,61 @@
+name: nosso_racha
+description: nosso racha, seu gestor de rachas de futebol.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.10.0 <4.0.0'
+  flutter: '>=3.38.1'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Ícones iOS
+  cupertino_icons: ^1.0.9
+
+  # Firebase (Versões Estáveis)
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1  
+  cloud_firestore: ^5.4.4
+
+  #Cloud Functions
+  cloud_functions: ^5.1.3
+  
+  # Gerência de Estado
+  provider: ^6.1.1
+
+  # Armazenamento Local (Para "Lembrar de mim")
+  shared_preferences: ^2.5.6
+  
+  # Utilitários
+  intl: ^0.20.2
+  mask_text_input_formatter: ^2.4.0 
+  url_launcher: ^6.3.3
+  http: ^1.2.0
+  share_plus: ^13.3.1
+  qr_flutter: ^4.1.0
+  package_info_plus: ^10.2.2
+  web: ^1.1.1
+
+  #Notificações
+  firebase_messaging: ^15.1.3   
+  
+  # UI/UX
+  google_fonts: ^8.2.1
+  lucide_icons_flutter: ^3.1.25
+  flutter_localizations:
+    sdk: flutter
+  geolocator: ^14.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  #assets:
+  #  - assets/images/
+    
