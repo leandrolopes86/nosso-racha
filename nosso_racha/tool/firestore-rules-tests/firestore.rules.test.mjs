@@ -264,12 +264,25 @@ before(async () => {
     });
 
     await setDoc(doc(db, 'events/private-event'), {
-      info: { visibility: 'private', group_id: 'team' },
+      info: { visibility: 'private', group_id: 'team', status: 'scheduled' },
       audit: { created_by: 'organizer' },
       participants: [],
     });
     await setDoc(doc(db, 'events/public-event'), {
-      info: { visibility: 'public', group_id: 'team' },
+      info: {
+        visibility: 'public',
+        group_id: 'team',
+        status: 'published',
+      },
+      audit: { created_by: 'organizer' },
+      participants: [],
+    });
+    await setDoc(doc(db, 'events/scheduled-public-event'), {
+      info: {
+        visibility: 'public',
+        group_id: 'team',
+        status: 'scheduled',
+      },
       audit: { created_by: 'organizer' },
       participants: [],
     });
@@ -316,17 +329,19 @@ after(async () => {
   await testEnvironment?.cleanup();
 });
 
-test('public events are readable anonymously but private events are not', async () => {
+test('only published public events are readable anonymously', async () => {
   const db = testEnvironment.unauthenticatedContext().firestore();
 
   await assertSucceeds(getDoc(doc(db, 'events/public-event')));
   await assertFails(getDoc(doc(db, 'events/private-event')));
+  await assertFails(getDoc(doc(db, 'events/scheduled-public-event')));
 
   const publicEvents = await assertSucceeds(
     getDocs(
       query(
         collection(db, 'events'),
         where('info.visibility', 'in', ['public', 'moderated']),
+        where('info.status', 'in', ['published', 'in_progress', 'finished']),
       ),
     ),
   );
@@ -334,6 +349,29 @@ test('public events are readable anonymously but private events are not', async 
     publicEvents.docs.map((event) => event.id),
     ['public-event'],
   );
+});
+
+test('only group members can read their unpublished events early', async () => {
+  const memberDb = testEnvironment.authenticatedContext('member').firestore();
+  const outsiderDb = testEnvironment
+    .authenticatedContext('outsider')
+    .firestore();
+  const anonymousDb = testEnvironment.unauthenticatedContext().firestore();
+
+  await assertSucceeds(getDoc(doc(memberDb, 'events/scheduled-public-event')));
+  await assertFails(getDoc(doc(outsiderDb, 'events/scheduled-public-event')));
+  await assertFails(getDoc(doc(anonymousDb, 'events/scheduled-public-event')));
+
+  const groupEventsQuery = (db) =>
+    query(
+      collection(db, 'events'),
+      or(
+        where('info.group_id', '==', 'team'),
+        where('group_id', '==', 'team'),
+      ),
+    );
+  await assertSucceeds(getDocs(groupEventsQuery(memberDb)));
+  await assertFails(getDocs(groupEventsQuery(outsiderDb)));
 });
 
 test('private event access is limited to members and users granted invite access', async () => {
@@ -348,9 +386,9 @@ test('private event access is limited to members and users granted invite access
   await assertFails(getDoc(doc(outsiderDb, 'events/private-event')));
 });
 
-test('organizers can list all events linked through current or legacy group fields', async () => {
-  const organizerDb = testEnvironment
-    .authenticatedContext('organizer')
+test('group owners can list events linked through current or legacy group fields', async () => {
+  const groupOwnerDb = testEnvironment
+    .authenticatedContext('organizer-vip')
     .firestore();
   const outsiderDb = testEnvironment
     .authenticatedContext('outsider')
@@ -365,7 +403,7 @@ test('organizers can list all events linked through current or legacy group fiel
     );
 
   const events = await assertSucceeds(
-    getDocs(organizationEventsQuery(organizerDb)),
+    getDocs(organizationEventsQuery(groupOwnerDb)),
   );
   assert.deepEqual(
     events.docs.map((event) => event.id).sort(),

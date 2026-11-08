@@ -39,6 +39,9 @@ class EventService extends ChangeNotifier {
       query = query.where(
         'info.visibility',
         whereIn: const ['public', 'moderated'],
+      ).where(
+        'info.status',
+        whereIn: const ['published', 'in_progress', 'finished'],
       );
     }
 

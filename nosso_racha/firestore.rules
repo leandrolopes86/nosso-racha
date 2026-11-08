@@ -482,9 +482,17 @@ service cloud.firestore {
     function canReadEvent(eventId, eventData) {
       let info = eventData.get('info', {});
       let visibility = info.get('visibility', 'public');
+      let status = info.get('status', eventData.get('status', ''));
       let groupId = eventGroupId(eventData);
       let creatorId = eventData.get('audit', {}).get('created_by', null);
-      return visibility in ['public', 'moderated']
+      return (
+          (visibility == 'public' || visibility == 'moderated')
+          && (
+            status == 'published'
+            || status == 'in_progress'
+            || status == 'finished'
+          )
+        )
         || (signedIn()
           && (
             creatorId == request.auth.uid

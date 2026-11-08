@@ -910,11 +910,12 @@ class _HomePublicaViewState extends State<HomePublicaView> {
                         (a, b) => b.startDateTime.compareTo(a.startDateTime),
                       );
 
-                      // Filtra rachas finalizados ou ocultos por visibilidade privada
+                      // Exibe apenas rachas já publicados para o público.
                       final activeEvents = events
                           .where(
                             (e) =>
-                                e.status != 'finished' &&
+                                (e.status == 'published' ||
+                                    e.status == 'in_progress') &&
                                 (e.visibility == 'public' ||
                                     e.visibility == 'moderated'),
                           )
