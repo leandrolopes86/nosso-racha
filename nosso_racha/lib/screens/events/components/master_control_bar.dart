@@ -50,7 +50,8 @@ class _MasterControlBarState extends State<MasterControlBar> {
                 p.status == 'active' &&
                 p.paymentStatus == 'pending' &&
                 p.paymentGatewayId != null &&
-                p.paymentGatewayId!.isNotEmpty,
+                p.paymentGatewayId!.isNotEmpty &&
+                !p.paymentGatewayId!.startsWith('manual_'),
           )
           .toList();
 

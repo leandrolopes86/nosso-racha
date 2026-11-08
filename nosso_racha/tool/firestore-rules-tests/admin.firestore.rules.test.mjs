@@ -96,6 +96,7 @@ test('admin rules isolate group settings, subcollections, and transactions', asy
   await assertFails(
     getDoc(doc(outsiderDb, 'groups/team/settings/payment_gateway')),
   );
+  await assertFails(getDoc(doc(ownerDb, 'settings/payment_gateway')));
   await assertFails(
     getDoc(doc(outsiderDb, 'groups/team/notes/private')),
   );
@@ -149,6 +150,13 @@ test('admin rules reserve user reads and VIP changes for admin claims', async ()
   await assertSucceeds(
     updateDoc(doc(adminDb, 'users/group-owner'), {
       vipPlan: 'Bronze',
+      vipExpiresAt: future,
+      updatedAt: future,
+    }),
+  );
+  await assertFails(
+    updateDoc(doc(adminDb, 'users/group-owner'), {
+      vipPlan: 'community_plus',
       vipExpiresAt: future,
       updatedAt: future,
     }),

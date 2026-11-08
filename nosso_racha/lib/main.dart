@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'models/vip_plans_config.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'home_publica_view.dart';
@@ -17,6 +18,17 @@ import 'services/user_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  try {
+    await VipPlansConfig.loadFromFirestore();
+  } on FirebaseException catch (error) {
+    debugPrint(
+      'Could not load VIP plan catalog; built-in plan defaults remain active: $error',
+    );
+  } on FormatException catch (error) {
+    debugPrint(
+      'Invalid VIP plan catalog; built-in plan defaults remain active: $error',
+    );
+  }
   runApp(const NossoRachaApp());
 }
 

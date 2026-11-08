@@ -122,10 +122,15 @@ class GroupPlanService {
     final active =
         ownerActive &&
         (groupTier != null || ownerTier != null || ownerSubscriptionActive);
+    final activeVipTier = groupTier ?? ownerTier;
 
     return GroupPlanAccess(
       isAuthorized: true,
-      features: active ? VipPlansConfig.featuresFor(activePlan) : const {},
+      features: active
+          ? activeVipTier == null
+                ? VipPlansConfig.featuresFor(activePlan)
+                : VipPlansConfig.featuresForVipTier(activeVipTier)
+          : const {},
       plan: activePlan,
     );
   }

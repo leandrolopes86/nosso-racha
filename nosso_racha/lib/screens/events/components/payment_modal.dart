@@ -8,6 +8,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../models/event_model.dart';
 import '../../../models/user_model.dart';
 import '../../../services/payment_gateway_service.dart';
+import '../../../services/payment/payment_polling_policy.dart';
 
 class PaymentModal extends StatefulWidget {
   final EventModel event;
@@ -99,7 +100,9 @@ class _PaymentModalState extends State<PaymentModal> {
           }
         }
 
-        if (!isExpiredLocal && mounted) {
+        if (!isExpiredLocal &&
+            mounted &&
+            PaymentPollingPolicy.shouldPoll(data)) {
           setState(() {
             _mpData = data;
             _isAutoPix = true;
@@ -190,7 +193,7 @@ class _PaymentModalState extends State<PaymentModal> {
           _mpData = result;
           _isLoading = false;
         });
-        _startPolling();
+        if (PaymentPollingPolicy.shouldPoll(result)) _startPolling();
       }
     } catch (e) {
       if (mounted) {
@@ -204,26 +207,46 @@ class _PaymentModalState extends State<PaymentModal> {
 
   void _startPolling() {
     if (_pollingTimer != null) return;
-    _pollingTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
-      if (_mpData == null || _mpData!['payment_id'] == null) return;
+    if (_mpData == null || !PaymentPollingPolicy.shouldPoll(_mpData!)) return;
+    _pollingTimer = Timer.periodic(PaymentPollingPolicy.interval, (
+      timer,
+    ) async {
+      if (_mpData == null || !PaymentPollingPolicy.shouldPoll(_mpData!)) {
+        timer.cancel();
+        return;
+      }
+      if (_isCheckingPaymentStatus) return;
+      _isCheckingPaymentStatus = true;
+      if (_mpData!['payment_id'] == null) {
+        timer.cancel();
+        _isCheckingPaymentStatus = false;
+        return;
+      }
       final paymentId = _mpData!['payment_id'].toString();
 
       if (!mounted) {
         timer.cancel();
+        _isCheckingPaymentStatus = false;
         return;
       }
 
-      final paymentService = Provider.of<PaymentGatewayService>(
-        context,
-        listen: false,
-      );
-      final status = await paymentService.checkPaymentStatus(paymentId);
-
-      if (status == 'approved') timer.cancel();
+      try {
+        final paymentService = Provider.of<PaymentGatewayService>(
+          context,
+          listen: false,
+        );
+        final status = await paymentService.checkPaymentStatus(paymentId);
+        if (PaymentPollingPolicy.isTerminalStatus(status)) timer.cancel();
+      } finally {
+        _isCheckingPaymentStatus = false;
+      }
     });
   }
 
+  bool _isCheckingPaymentStatus = false;
+
   void _handleExpiration() {
+    _pollingTimer?.cancel();
     if (mounted) {
       setState(() {
         _isExpired = true;

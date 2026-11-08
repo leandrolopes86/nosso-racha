@@ -74,7 +74,14 @@ class GroupMembershipService {
         ownerData: ownerData,
         groupData: groupData,
       );
-      final ownerLimits = PlanLimits.forOrganizerPlan(ownerPlan);
+      final ownerVipTier = UserModel.effectiveVipTierForGroupOwner(
+        ownerId: ownerId,
+        ownerData: ownerData,
+        groupData: groupData,
+      );
+      final ownerLimits = ownerVipTier == null
+          ? PlanLimits.forOrganizerPlan(ownerPlan)
+          : PlanLimits.forVipTier(ownerVipTier, ownerPlan);
       if (role == 'member' && ownerLimits.maxAthletesPerGroup != null) {
         if (athleteCount >= ownerLimits.maxAthletesPerGroup!) {
           throw StateError(

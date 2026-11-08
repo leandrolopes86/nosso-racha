@@ -180,15 +180,30 @@ class UserModel {
     required Map<String, dynamic> ownerData,
     required Map<String, dynamic> groupData,
   }) {
-    final groupPlan = UserModel.fromMap(ownerId, {
+    final groupTier = _activeOrganizerVipTier({
       'vipPlan': groupData['vipPlan'],
       'vipExpiresAt': groupData['vipExpiresAt'] ?? groupData['vip_expires_at'],
     });
-    if (groupPlan.hasActiveVipPlan &&
-        groupPlan.effectivePlan == 'organizer_vip') {
-      return groupPlan.effectivePlan;
+    if (groupTier != null) {
+      return VipPlansConfig.appPlanForVipTier(groupTier);
     }
     return UserModel.fromMap(ownerId, ownerData).effectivePlan;
+  }
+
+  static String? effectiveVipTierForGroupOwner({
+    required String ownerId,
+    required Map<String, dynamic> ownerData,
+    required Map<String, dynamic> groupData,
+  }) {
+    final groupTier = _activeOrganizerVipTier({
+      'vipPlan': groupData['vipPlan'],
+      'vipExpiresAt': groupData['vipExpiresAt'] ?? groupData['vip_expires_at'],
+    });
+    if (groupTier != null) return groupTier;
+    final owner = UserModel.fromMap(ownerId, ownerData);
+    return owner.hasActiveVipPlan && owner.effectivePlan == 'organizer_vip'
+        ? owner.vipPlan
+        : null;
   }
 
   static String? groupOwnerId(Map<String, dynamic> groupData) {
@@ -263,11 +278,32 @@ class UserModel {
       effectivePlan == 'organizer_vip';
 
   PlanLimits get planLimits {
+    if (hasActiveVipPlan && effectivePlan == 'organizer_vip') {
+      return PlanLimits.forVipTier(vipPlan, effectivePlan);
+    }
     if (effectivePlan == 'organizer_vip') return PlanLimits.organizerVip;
     if (isStaff || canCreateEvent) return PlanLimits.organizer;
+    if (hasActiveVipPlan) {
+      return PlanLimits.forVipTier(vipPlan, effectivePlan);
+    }
     return PlanLimits.forPlan(effectivePlan);
   }
 
   bool get canCreateOrganizations =>
-      isMaster || effectivePlan == 'organizer_vip';
+      isMaster || planLimits.canCreateOrganizations;
+
+  static String? _activeOrganizerVipTier(Map<String, dynamic> data) {
+    final tier = data['vipPlan'] as String?;
+    final expiry = _dateTimeFrom(
+      data['vipExpiresAt'] ?? data['vip_expires_at'],
+    );
+    if (tier == null ||
+        !VipPlansConfig.isPaidVipTier(tier) ||
+        VipPlansConfig.appPlanForVipTier(tier) != 'organizer_vip' ||
+        expiry == null ||
+        !expiry.isAfter(DateTime.now())) {
+      return null;
+    }
+    return tier;
+  }
 }

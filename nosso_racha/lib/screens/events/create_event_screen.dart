@@ -1097,7 +1097,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                                   ),
                                   DropdownButton<int>(
                                     value: _linePlayersPerTeam,
-                                    items: [4, 5, 6, 7, 8, 9, 10]
+                                    items: SportConfig.linePlayersPerTeamOptions
                                         .map(
                                           (e) => DropdownMenuItem(
                                             value: e,

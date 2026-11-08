@@ -1,3 +1,5 @@
+import 'vip_plans_config.dart';
+
 class PlanLimits {
   final int? maxGroupMemberships;
   final int? maxOwnedOrganizations;
@@ -59,4 +61,39 @@ class PlanLimits {
 
   static PlanLimits forOrganizerPlan(String plan) =>
       plan == 'organizer_vip' ? organizerVip : organizer;
+
+  static PlanLimits forVipTier(String tier, String fallbackPlan) {
+    final normalizedTier = tier.trim().toLowerCase().replaceAll(' ', '_');
+    final config = VipPlansConfig.plans[normalizedTier];
+    if (config == null) return forPlan(fallbackPlan);
+    final fallback = forPlan(
+      config.appPlan == 'free' ? 'free' : config.appPlan,
+    );
+    int? configuredLimit(String field, int? defaultValue) =>
+        config.limits.containsKey(field) ? config.limits[field] : defaultValue;
+
+    return PlanLimits(
+      maxGroupMemberships: configuredLimit(
+        'maxGroupMemberships',
+        fallback.maxGroupMemberships,
+      ),
+      maxOwnedOrganizations: configuredLimit(
+        'maxOwnedOrganizations',
+        fallback.maxOwnedOrganizations,
+      ),
+      maxOpenEvents: configuredLimit('maxOpenEvents', fallback.maxOpenEvents),
+      maxAthletesPerGroup: configuredLimit(
+        'maxAthletesPerGroup',
+        fallback.maxAthletesPerGroup,
+      ),
+      maxCoOrganizersPerGroup: configuredLimit(
+        'maxCoOrganizersPerGroup',
+        fallback.maxCoOrganizersPerGroup,
+      ),
+      canCreateOrganizations:
+          config.appPlan == 'organizer_vip' &&
+          (config.limits['maxOwnedOrganizations'] == null ||
+              config.limits['maxOwnedOrganizations']! > 0),
+    );
+  }
 }

@@ -1618,3 +1618,106 @@ test('group membership documents do not expose other members to ordinary users',
   );
   await assertFails(getDocs(collectionGroup(memberDb, 'members')));
 });
+
+test('VIP catalog exposes only the five supported plans and configured limits', async () => {
+  const anonymousDb = testEnvironment.unauthenticatedContext().firestore();
+  const memberDb = testEnvironment.authenticatedContext('member').firestore();
+  const ownerDb = testEnvironment.authenticatedContext('organizer').firestore();
+  const adminDb = testEnvironment
+    .authenticatedContext('catalog-admin', { admin: true })
+    .firestore();
+  const catalogRef = doc(adminDb, 'settings/vip_plans');
+  const expiration = Timestamp.fromDate(
+    new Date(Date.now() + 24 * 60 * 60 * 1000),
+  );
+
+  await assertSucceeds(getDoc(doc(anonymousDb, 'settings/vip_plans')));
+  await assertFails(
+    setDoc(doc(memberDb, 'settings/vip_plans'), {
+      plans: {},
+    }),
+  );
+  await assertSucceeds(
+    setDoc(catalogRef, {
+      plans: {
+        community_plus: {
+          active: true,
+          appPlan: 'organizer_vip',
+          limits: { maxOpenEvents: 8 },
+        },
+        platinum: {
+          active: true,
+          appPlan: 'organizer_vip',
+          limits: {
+            maxAthletesPerGroup: 41,
+            maxCoOrganizersPerGroup: 4,
+          },
+        },
+      },
+    }),
+  );
+  await assertFails(
+    updateDoc(doc(adminDb, 'users/organizer'), {
+      vipPlan: 'community_plus',
+      vipExpiresAt: expiration,
+      updatedAt: expiration,
+    }),
+  );
+  await assertSucceeds(
+    updateDoc(doc(adminDb, 'users/organizer'), {
+      vipPlan: 'Platinum',
+      vipExpiresAt: expiration,
+      updatedAt: expiration,
+    }),
+  );
+
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'groups/configured-platinum-team'), {
+      owner_id: 'organizer',
+      athlete_count: 40,
+      co_organizer_count: 0,
+    });
+    for (const uid of ['configured-capacity-athlete', 'configured-capacity-overflow']) {
+      await setDoc(doc(db, `users/${uid}`), { group_ids: [] });
+    }
+  });
+
+  const capacityBatch = writeBatch(ownerDb);
+  capacityBatch.update(doc(ownerDb, 'groups/configured-platinum-team'), {
+    athlete_count: 41,
+    capacity_member_uid: 'configured-capacity-athlete',
+    capacity_member_role: 'member',
+    capacity_member_delta: 1,
+    capacity_member_nonce: 'configured-platinum-capacity',
+  });
+  capacityBatch.set(
+    doc(ownerDb, 'groups/configured-platinum-team/members/configured-capacity-athlete'),
+    { uid: 'configured-capacity-athlete', role: 'member' },
+  );
+  capacityBatch.update(doc(ownerDb, 'users/configured-capacity-athlete'), {
+    group_ids: ['configured-platinum-team'],
+    membership_change_group_id: 'configured-platinum-team',
+    membership_change_nonce: 'configured-platinum-capacity',
+  });
+  await assertSucceeds(capacityBatch.commit());
+
+  const overflowBatch = writeBatch(ownerDb);
+  overflowBatch.update(doc(ownerDb, 'groups/configured-platinum-team'), {
+    athlete_count: 42,
+    capacity_member_uid: 'configured-capacity-overflow',
+    capacity_member_role: 'member',
+    capacity_member_delta: 1,
+    capacity_member_nonce: 'configured-platinum-overflow',
+  });
+  overflowBatch.set(
+    doc(ownerDb, 'groups/configured-platinum-team/members/configured-capacity-overflow'),
+    { uid: 'configured-capacity-overflow', role: 'member' },
+  );
+  overflowBatch.update(doc(ownerDb, 'users/configured-capacity-overflow'), {
+    group_ids: ['configured-platinum-team'],
+    membership_change_group_id: 'configured-platinum-team',
+    membership_change_nonce: 'configured-platinum-overflow',
+  });
+  await assertFails(overflowBatch.commit());
+});

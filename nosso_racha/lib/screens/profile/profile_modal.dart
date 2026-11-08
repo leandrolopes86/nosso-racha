@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../models/vip_plans_config.dart';
 import '../../services/auth_service.dart';
 import '../../services/theme_service.dart';
 
@@ -306,7 +307,7 @@ class _ProfileModalState extends State<ProfileModal> {
                             children: [
                               Text(
                                 user.hasActiveVipPlan
-                                    ? 'VIP ${user.vipPlan}'
+                                    ? 'VIP ${VipPlansConfig.displayNameFor(user.vipPlan)}'
                                     : user.effectivePlan == 'organizer_vip'
                                     ? 'Plano Organizador VIP'
                                     : user.effectivePlan == 'athlete_vip'

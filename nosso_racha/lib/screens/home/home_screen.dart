@@ -1,10 +1,12 @@
 import 'package:flutter/foundation.dart'; // Para checar plataforma
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../models/event_model.dart';
 import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
@@ -492,7 +494,18 @@ class _HomeScreenState extends State<HomeScreen> {
         ? Colors.blue
         : const Color(0xFF2E7D32);
     final formattedDate = DateFormat('dd/MM/yyyy').format(event.startDateTime);
-    final formattedTime = DateFormat('HH:mm').format(event.startDateTime);
+    final weekday = const [
+      'segunda-feira',
+      'terça-feira',
+      'quarta-feira',
+      'quinta-feira',
+      'sexta-feira',
+      'sábado',
+      'domingo',
+    ][event.startDateTime.weekday - 1];
+    final startTime = DateFormat('HH:mm').format(event.startDateTime);
+    final endTime = DateFormat('HH:mm').format(event.endDateTime);
+    final mapDestination = _eventMapDestination(event);
 
     return Card(
       elevation: 2,
@@ -557,19 +570,54 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               if (event.location.trim().isNotEmpty) ...[
                 const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Icon(LucideIcons.mapPin, size: 16, color: iconColor),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        event.location,
-                        style: TextStyle(color: subtitleColor),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                Tooltip(
+                  message: mapDestination == null
+                      ? ''
+                      : 'Abrir rota no Google Maps',
+                  child: InkWell(
+                    onTap: mapDestination == null
+                        ? null
+                        : () => _openEventDirections(mapDestination),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          Icon(
+                            LucideIcons.mapPin,
+                            size: 16,
+                            color: mapDestination == null
+                                ? iconColor
+                                : Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              event.location,
+                              style: TextStyle(
+                                color: mapDestination == null
+                                    ? subtitleColor
+                                    : Theme.of(context).colorScheme.primary,
+                                decoration: mapDestination == null
+                                    ? null
+                                    : TextDecoration.underline,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (mapDestination != null) ...[
+                            const SizedBox(width: 6),
+                            Icon(
+                              Icons.directions_outlined,
+                              size: 16,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ],
+                        ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
               ],
               if (event.locationNote?.isNotEmpty == true) ...[
@@ -589,14 +637,46 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Icon(LucideIcons.calendarDays, size: 16, color: iconColor),
-                  const SizedBox(width: 6),
-                  Text(formattedDate, style: TextStyle(color: subtitleColor)),
-                  const SizedBox(width: 14),
-                  Icon(LucideIcons.clock, size: 16, color: iconColor),
-                  const SizedBox(width: 6),
-                  Text(formattedTime, style: TextStyle(color: subtitleColor)),
-                  const Spacer(),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              LucideIcons.calendarDays,
+                              size: 16,
+                              color: iconColor,
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                '$weekday, $formattedDate',
+                                style: TextStyle(color: subtitleColor),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(LucideIcons.clock, size: 16, color: iconColor),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                'Início $startTime • Fim $endTime',
+                                style: TextStyle(color: subtitleColor),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
                   Text(
                     'DETALHES',
                     style: TextStyle(
@@ -623,6 +703,63 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+
+  String? _eventMapDestination(EventModel event) {
+    if (event.latitude != null && event.longitude != null) {
+      return '${event.latitude},${event.longitude}';
+    }
+
+    final addressParts =
+        [
+              event.street,
+              event.addressNumber,
+              event.addressComplement,
+              event.neighborhood,
+              event.city,
+              event.state,
+              event.postcode,
+              event.country,
+            ]
+            .whereType<String>()
+            .map((part) => part.trim())
+            .where((part) => part.isNotEmpty);
+    final address = addressParts.join(', ');
+    if (address.isEmpty) return null;
+
+    return [
+      event.location,
+      address,
+    ].where((part) => part.trim().isNotEmpty).join(', ');
+  }
+
+  Future<void> _openEventDirections(String destination) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final uri = Uri.https('www.google.com', '/maps/dir/', {
+      'api': '1',
+      'destination': destination,
+    });
+
+    try {
+      final opened = kIsWeb
+          ? await launchUrl(uri, webOnlyWindowName: '_blank')
+          : await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened && mounted) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Não foi possível abrir o Google Maps.'),
+          ),
+        );
+      }
+    } on PlatformException {
+      if (mounted) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Não foi possível abrir o Google Maps.'),
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildEventGroupBadge(BuildContext context, String? groupId) {

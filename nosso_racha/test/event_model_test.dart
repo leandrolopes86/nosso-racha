@@ -11,6 +11,8 @@ void main() {
       expect(SportConfig.fromId('volleyball').hasGoalkeeper, isFalse);
       expect(SportConfig.fromId('basketball').defaultLinePlayersPerTeam, 5);
       expect(SportConfig.fromId('unknown').id, 'football');
+      expect(SportConfig.linePlayersPerTeamOptions.first, 2);
+      expect(SportConfig.linePlayersPerTeamOptions.last, 10);
     });
   });
 

@@ -14,6 +14,7 @@ import '../../models/payment_config_model.dart';
 import '../../services/event_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/payment_gateway_service.dart';
+import '../../services/payment/payment_polling_policy.dart';
 import '../../services/match_service.dart';
 import '../../services/web_update_service.dart';
 import 'team_sorting_screen.dart';
@@ -54,6 +55,8 @@ class _EventDetailsScreenState extends State<EventDetailsScreen>
   // Controle de visibilidade do cabeçalho
   bool _isHeaderExpanded = true;
   final Set<String> _goaliePixSyncAttempts = {};
+  DateTime? _lastBackgroundPaymentCheckAt;
+  bool _isCheckingBackgroundPayment = false;
 
   @override
   void initState() {
@@ -118,11 +121,25 @@ class _EventDetailsScreenState extends State<EventDetailsScreen>
   }
 
   Future<void> _checkBackgroundPayment() async {
+    final now = DateTime.now();
+    if (_isCheckingBackgroundPayment ||
+        (_lastBackgroundPaymentCheckAt != null &&
+            now.difference(_lastBackgroundPaymentCheckAt!) <
+                PaymentPollingPolicy.interval)) {
+      return;
+    }
+
     final currentUser = Provider.of<AuthService>(
       context,
       listen: false,
     ).currentUser;
     if (currentUser == null) return;
+    _isCheckingBackgroundPayment = true;
+    _lastBackgroundPaymentCheckAt = now;
+    final paymentService = Provider.of<PaymentGatewayService>(
+      context,
+      listen: false,
+    );
 
     try {
       final doc = await FirebaseFirestore.instance
@@ -134,11 +151,8 @@ class _EventDetailsScreenState extends State<EventDetailsScreen>
 
       if (doc.exists && doc.data() != null) {
         final data = doc.data()!;
-        if (data['payment_id'] != null) {
-          final paymentService = Provider.of<PaymentGatewayService>(
-            context,
-            listen: false,
-          );
+        if (data['payment_id'] != null &&
+            PaymentPollingPolicy.shouldPoll(data)) {
           await paymentService.checkPaymentStatus(
             data['payment_id'].toString(),
           );
@@ -146,6 +160,8 @@ class _EventDetailsScreenState extends State<EventDetailsScreen>
       }
     } catch (e) {
       print("Erro ao verificar pagamento em background: $e");
+    } finally {
+      _isCheckingBackgroundPayment = false;
     }
   }
 

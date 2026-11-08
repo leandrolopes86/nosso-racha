@@ -1,8 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'services/auth_service.dart';
 import 'services/event_service.dart';
 import 'models/event_model.dart';
@@ -1081,9 +1084,19 @@ class CardRachaCompactoGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final formattedDate = DateFormat(
-      'dd/MM (EEE) • HH:mm',
-    ).format(event.startDateTime);
+    final formattedDate = DateFormat('dd/MM/yyyy').format(event.startDateTime);
+    final weekday = const [
+      'segunda-feira',
+      'terça-feira',
+      'quarta-feira',
+      'quinta-feira',
+      'sexta-feira',
+      'sábado',
+      'domingo',
+    ][event.startDateTime.weekday - 1];
+    final startTime = DateFormat('HH:mm').format(event.startDateTime);
+    final endTime = DateFormat('HH:mm').format(event.endDateTime);
+    final mapDestination = _eventMapDestination;
     final distanceLabel = distanceKm == null
         ? null
         : distanceKm! < 1
@@ -1226,18 +1239,51 @@ class CardRachaCompactoGrid extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Icon(
-                    Icons.location_on_outlined,
-                    size: 14,
-                    color: Colors.grey[600],
-                  ),
-                  const SizedBox(width: 6),
                   Expanded(
-                    child: Text(
-                      event.location,
-                      style: TextStyle(color: Colors.grey[700], fontSize: 12),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    child: InkWell(
+                      onTap: mapDestination == null
+                          ? null
+                          : () => _openEventDirections(context, mapDestination),
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.location_on_outlined,
+                              size: 14,
+                              color: mapDestination == null
+                                  ? Colors.grey[600]
+                                  : Colors.green[800],
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                event.location,
+                                style: TextStyle(
+                                  color: mapDestination == null
+                                      ? Colors.grey[700]
+                                      : Colors.green[800],
+                                  fontSize: 12,
+                                  decoration: mapDestination == null
+                                      ? null
+                                      : TextDecoration.underline,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (mapDestination != null) ...[
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.directions_outlined,
+                                size: 14,
+                                color: Colors.green[800],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                   if (distanceLabel != null) ...[
@@ -1273,22 +1319,31 @@ class CardRachaCompactoGrid extends StatelessWidget {
               ],
               const SizedBox(height: 4),
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.access_time,
-                        size: 14,
-                        color: Colors.grey[600],
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        formattedDate,
-                        style: TextStyle(color: Colors.grey[700], fontSize: 12),
-                      ),
-                    ],
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.access_time,
+                          size: 14,
+                          color: Colors.grey[600],
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            '$weekday, $formattedDate',
+                            style: TextStyle(
+                              color: Colors.grey[700],
+                              fontSize: 12,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   Text(
                     'R\$ ${event.price.toStringAsFixed(2).replaceAll('.', ',')}',
                     style: const TextStyle(
@@ -1296,6 +1351,17 @@ class CardRachaCompactoGrid extends StatelessWidget {
                       fontWeight: FontWeight.bold,
                       color: Colors.green,
                     ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 3),
+              Row(
+                children: [
+                  Icon(Icons.schedule, size: 14, color: Colors.grey[600]),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Início $startTime • Fim $endTime',
+                    style: TextStyle(color: Colors.grey[700], fontSize: 12),
                   ),
                 ],
               ),
@@ -1349,6 +1415,66 @@ class CardRachaCompactoGrid extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String? get _eventMapDestination {
+    if (event.latitude != null && event.longitude != null) {
+      return '${event.latitude},${event.longitude}';
+    }
+
+    final addressParts =
+        [
+              event.street,
+              event.addressNumber,
+              event.addressComplement,
+              event.neighborhood,
+              event.city,
+              event.state,
+              event.postcode,
+              event.country,
+            ]
+            .whereType<String>()
+            .map((part) => part.trim())
+            .where((part) => part.isNotEmpty);
+    final address = addressParts.join(', ');
+    if (address.isEmpty) return null;
+
+    return [
+      event.location,
+      address,
+    ].where((part) => part.trim().isNotEmpty).join(', ');
+  }
+
+  Future<void> _openEventDirections(
+    BuildContext context,
+    String destination,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final uri = Uri.https('www.google.com', '/maps/dir/', {
+      'api': '1',
+      'destination': destination,
+    });
+
+    try {
+      final opened = kIsWeb
+          ? await launchUrl(uri, webOnlyWindowName: '_blank')
+          : await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened && context.mounted) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Não foi possível abrir o Google Maps.'),
+          ),
+        );
+      }
+    } on PlatformException {
+      if (context.mounted) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Não foi possível abrir o Google Maps.'),
+          ),
+        );
+      }
+    }
   }
 }
 

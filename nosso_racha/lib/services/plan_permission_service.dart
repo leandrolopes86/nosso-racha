@@ -22,6 +22,7 @@ class PlanPermissionService {
     }
     if (!VipPlansConfig.hasPlan(plan)) return false;
 
-    return currentUsage < VipPlansConfig.limitFor(plan, feature);
+    final limit = VipPlansConfig.limitFor(plan, feature);
+    return limit == null || currentUsage < limit;
   }
 }

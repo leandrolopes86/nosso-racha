@@ -343,9 +343,15 @@ class EventService extends ChangeNotifier {
         ownerData: ownerData,
         groupData: groupData,
       );
-      final maxOpenEvents = PlanLimits.forOrganizerPlan(
-        ownerPlan,
-      ).maxOpenEvents;
+      final ownerVipTier = UserModel.effectiveVipTierForGroupOwner(
+        ownerId: ownerId,
+        ownerData: ownerData,
+        groupData: groupData,
+      );
+      final ownerLimits = ownerVipTier == null
+          ? PlanLimits.forOrganizerPlan(ownerPlan)
+          : PlanLimits.forVipTier(ownerVipTier, ownerPlan);
+      final maxOpenEvents = ownerLimits.maxOpenEvents;
       if (delta > 0 && maxOpenEvents != null && count + delta > maxOpenEvents) {
         throw StateError(
           'O limite de $maxOpenEvents rachas abertos do plano foi atingido.',

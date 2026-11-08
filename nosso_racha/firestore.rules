@@ -68,10 +68,25 @@ service cloud.firestore {
       return isGroupOwner(groupId) || isGroupManagerMember(groupId);
     }
 
-    function hasActiveVipTier(data) {
-      let vipPlan = data.get('vipPlan', '');
-      let vipExpiresAt = data.get('vipExpiresAt', null);
-      return vipPlan in [
+    function vipPlanConfig(planId) {
+      let configPath = /databases/$(database)/documents/settings/vip_plans;
+      let plans = exists(configPath)
+        ? get(configPath).data.get('plans', {})
+        : {};
+      let canonicalPlanId = planId in ['Bronze', 'bronze']
+        ? 'bronze'
+        : planId in ['Silver', 'silver', 'Prata', 'prata']
+          ? 'silver'
+          : planId in ['Gold', 'gold', 'Ouro', 'ouro']
+            ? 'gold'
+            : planId in ['Platinum', 'platinum']
+              ? 'platinum'
+              : planId;
+      return plans.get(planId, plans.get(canonicalPlanId, {}));
+    }
+
+    function isPaidVipPlanId(planId) {
+      return planId in [
           'Bronze',
           'bronze',
           'Silver',
@@ -84,7 +99,84 @@ service cloud.firestore {
           'prata',
           'Platinum',
           'platinum'
+        ];
+    }
+
+    function isSupportedVipPlanUpdate() {
+      let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+      let planId = request.resource.data.get('vipPlan', '');
+      let expiration = request.resource.data.get('vipExpiresAt', null);
+      return !changedKeys.hasAny(['vipPlan', 'vipExpiresAt'])
+        || (
+          (planId in ['Free', 'free'] && expiration == null)
+          || (
+            isPaidVipPlanId(planId)
+            && expiration is timestamp
+            && expiration > request.time
+          )
+        );
+    }
+
+    function isOrganizerVipPlanId(planId) {
+      return planId in ['Platinum', 'platinum'];
+    }
+
+    function planLimit(planId, limitName, fallback) {
+      let defaultLimit = planId in ['Platinum', 'platinum']
+        && limitName in [
+          'maxOpenEvents',
+          'maxAthletesPerGroup',
+          'maxCoOrganizersPerGroup'
         ]
+        ? null
+        : fallback;
+      return vipPlanConfig(planId)
+        .get('limits', {})
+        .get(limitName, defaultLimit);
+    }
+
+    function isWithinGroupPlanLimit(groupId, limitName, fallback, count) {
+      let tier = activeOrganizerVipTierForGroup(groupId);
+      let limit = tier == '' ? fallback : planLimit(tier, limitName, fallback);
+      return limit == null || count <= limit;
+    }
+
+    function activeVipTier(data) {
+      let planId = data.get('vipPlan', '');
+      let expiresAt = data.get('vipExpiresAt', null);
+      return isPaidVipPlanId(planId)
+        && expiresAt is timestamp
+        && expiresAt > request.time
+        ? planId
+        : null;
+    }
+
+    function activeOrganizerVipTierForGroup(groupId) {
+      let group = get(groupPath(groupId)).data;
+      let ownerId = groupOwnerId(group);
+      let groupTier = activeVipTier(group);
+      let ownerTier = activeVipTier(
+        get(/databases/$(database)/documents/users/$(ownerId)).data
+      );
+      return groupTier != null && isOrganizerVipPlanId(groupTier)
+        ? groupTier
+        : ownerTier != null && isOrganizerVipPlanId(ownerTier)
+          ? ownerTier
+          : hasActiveOrganizerVipPlan(ownerId) ? 'platinum' : '';
+    }
+
+    function userGroupMembershipLimit(uid) {
+      let user = get(/databases/$(database)/documents/users/$(uid)).data;
+      let vipTier = activeVipTier(user);
+      return vipTier != null
+        ? planLimit(vipTier, 'maxGroupMemberships', 10)
+        : hasActiveUserVipPlan(uid) ? 10 : 2;
+    }
+
+    function hasActiveVipTier(data) {
+      let vipPlan = data.get('vipPlan', '');
+      let vipExpiresAt = data.get('vipExpiresAt', null);
+      return isPaidVipPlanId(vipPlan)
         && vipExpiresAt is timestamp
         && vipExpiresAt > request.time;
     }
@@ -92,7 +184,7 @@ service cloud.firestore {
     function hasActivePlatinumVip(data) {
       let vipPlan = data.get('vipPlan', '');
       let vipExpiresAt = data.get('vipExpiresAt', null);
-      return vipPlan in ['Platinum', 'platinum']
+      return isOrganizerVipPlanId(vipPlan)
         && vipExpiresAt is timestamp
         && vipExpiresAt > request.time;
     }
@@ -128,9 +220,10 @@ service cloud.firestore {
       let owner = get(
         /databases/$(database)/documents/users/$(ownerId)
       ).data;
+      let groupTier = activeVipTier(group);
       return owner.get('status', 'active') == 'active'
         && (
-          hasActivePlatinumVip(group)
+          (groupTier != null && isOrganizerVipPlanId(groupTier))
           || hasActiveOrganizerVipPlan(ownerId)
         );
     }
@@ -179,13 +272,16 @@ service cloud.firestore {
       let groupBefore = get(groupPath(groupId)).data;
       let groupAfter = getAfter(groupPath(groupId)).data;
       let eventPath = /databases/$(database)/documents/events/$(eventId);
-      let beforeExists = exists(eventPath);
-      let afterExists = existsAfter(eventPath);
-      let openBefore = beforeExists && isOpenEvent(get(eventPath).data);
-      let openAfter = afterExists && isOpenEvent(getAfter(eventPath).data);
+      let openBefore = exists(eventPath)
+        && isOpenEvent(get(eventPath).data);
+      let openAfter = existsAfter(eventPath)
+        && isOpenEvent(getAfter(eventPath).data);
       let currentCount = groupBefore.get('open_events_count', 0);
       let nextCount = groupAfter.get('open_events_count', 0);
-      let ownerId = groupOwnerId(groupBefore);
+      let organizerTier = activeOrganizerVipTierForGroup(groupId);
+      let maxOpenEvents = organizerTier == ''
+        ? 3
+        : planLimit(organizerTier, 'maxOpenEvents', 3);
 
       return groupId is string
         && eventId is string
@@ -201,11 +297,7 @@ service cloud.firestore {
           (delta == 1 && !openBefore && openAfter)
           || (delta == -1 && openBefore && !openAfter)
         )
-        && (
-          hasActiveOrganizerVipPlan(ownerId)
-          || hasActiveGroupVipPlan(groupId)
-          || nextCount <= 3
-        );
+        && (maxOpenEvents == null || nextCount <= maxOpenEvents);
     }
 
     function hasValidEventCounterFields(groupId) {
@@ -270,9 +362,7 @@ service cloud.firestore {
         );
     }
 
-    function hasValidMemberCounts(groupId, role, delta) {
-      let groupBefore = get(groupPath(groupId)).data;
-      let groupAfter = getAfter(groupPath(groupId)).data;
+    function hasValidMemberCounts(groupId, groupBefore, groupAfter, role, delta) {
       return groupBefore.get('athlete_count', 0) is int
         && groupBefore.get('co_organizer_count', 0) is int
         && groupAfter.get('athlete_count', 0)
@@ -282,41 +372,41 @@ service cloud.firestore {
           == groupBefore.get('co_organizer_count', 0)
             + (role == 'co_organizer' ? delta : 0)
         && (
-          hasActiveGroupVipPlan(groupId)
+          delta == -1
           || (
             role == 'member'
-              ? groupAfter.get('athlete_count', 0) <= 40
-              : groupAfter.get('co_organizer_count', 0) <= 3
+              ? isWithinGroupPlanLimit(
+                groupId,
+                'maxAthletesPerGroup',
+                40,
+                groupAfter.get('athlete_count', 0)
+              )
+              : isWithinGroupPlanLimit(
+                groupId,
+                'maxCoOrganizersPerGroup',
+                3,
+                groupAfter.get('co_organizer_count', 0)
+              )
           )
         );
     }
 
     function hasValidMemberAddition(groupId, uid, role) {
+      let memberPath = groupMemberPath(groupId, uid);
+      let userPath = /databases/$(database)/documents/users/$(uid);
+      let member = getAfter(memberPath).data;
+      let userBefore = get(userPath).data;
+      let userAfter = getAfter(userPath).data;
+      let groupAfter = getAfter(groupPath(groupId)).data;
       return existsAfter(groupMemberPath(groupId, uid))
-        && getAfter(groupMemberPath(groupId, uid)).data.get('uid', null) == uid
-        && getAfter(groupMemberPath(groupId, uid)).data.get('role', null) == role
-        && getAfter(
-          /databases/$(database)/documents/users/$(uid)
-        ).data.get('group_ids', []).hasAny([groupId])
-        && getAfter(
-          /databases/$(database)/documents/users/$(uid)
-        ).data.get('membership_change_group_id', null) == groupId
-        && getAfter(
-          /databases/$(database)/documents/users/$(uid)
-        ).data.get('membership_change_nonce', null)
-          == getAfter(groupPath(groupId)).data.get('capacity_member_nonce', null)
-        && !get(
-          /databases/$(database)/documents/users/$(uid)
-        ).data.get('group_ids', []).hasAny([groupId])
-        && (
-          hasActiveUserVipPlan(uid)
-            ? getAfter(
-              /databases/$(database)/documents/users/$(uid)
-            ).data.get('group_ids', []).size() <= 10
-            : getAfter(
-              /databases/$(database)/documents/users/$(uid)
-            ).data.get('group_ids', []).size() <= 2
-        );
+        && member.get('uid', null) == uid
+        && member.get('role', null) == role
+        && userAfter.get('group_ids', []).hasAny([groupId])
+        && userAfter.get('membership_change_group_id', null) == groupId
+        && userAfter.get('membership_change_nonce', null)
+          == groupAfter.get('capacity_member_nonce', null)
+        && !userBefore.get('group_ids', []).hasAny([groupId])
+        && userAfter.get('group_ids', []).size() <= userGroupMembershipLimit(uid);
     }
 
     function hasValidMemberRemoval(groupId, uid) {
@@ -355,7 +445,13 @@ service cloud.firestore {
         && groupAfter.get('capacity_member_nonce', null) is string
         && groupAfter.get('capacity_member_nonce', null)
           != groupBefore.get('capacity_member_nonce', null)
-        && hasValidMemberCounts(groupId, role, delta)
+        && hasValidMemberCounts(
+          groupId,
+          groupBefore,
+          groupAfter,
+          role,
+          delta
+        )
         && (
           (delta == 1 && hasValidMemberAddition(groupId, uid, role))
           || (delta == -1 && hasValidMemberRemoval(groupId, uid))
@@ -852,7 +948,7 @@ service cloud.firestore {
         && request.resource.data.get('group_ids', []).hasOnly([])
         && hasValidFreeAthleteProfile(request.resource.data)
       );
-      allow update: if isAdmin()
+      allow update: if (isAdmin() && isSupportedVipPlanUpdate())
         || canUpdateOwnUserProfile(uid)
         || canUpdateUserStatus(uid)
         || canUpdateGroupMembership(uid);
@@ -1047,7 +1143,14 @@ service cloud.firestore {
     }
 
     match /settings/{settingId} {
-      allow read, write: if signedIn() && settingId != 'payment_gateway';
+      allow read: if settingId == 'vip_plans'
+        || (signedIn() && settingId != 'payment_gateway');
+      allow write: if (
+          settingId == 'vip_plans' && isAdmin()
+        ) || (
+          signedIn() && settingId != 'payment_gateway'
+            && settingId != 'vip_plans'
+        );
     }
 
     match /venues/{venueId} {

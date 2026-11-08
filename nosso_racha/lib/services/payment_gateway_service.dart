@@ -9,10 +9,14 @@ import '../models/user_model.dart';
 import 'payment/payment_strategy.dart';
 import 'payment/manual_strategy.dart';
 import 'payment/mercadopago_strategy.dart';
+import 'payment/payment_polling_policy.dart';
 
 class PaymentGatewayService extends ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  final Map<String, Future<String>> _paymentStatusChecksInFlight = {};
+  final Map<String, DateTime> _lastPaymentStatusCheckAt = {};
+  final Map<String, String> _lastPaymentStatuses = {};
 
   PaymentConfigModel? _config;
   bool _isLoading = false;
@@ -122,11 +126,53 @@ class PaymentGatewayService extends ChangeNotifier {
 
   // Verifica o status do pagamento (Polling)
   Future<String> checkPaymentStatus(String paymentId) async {
+    if (paymentId.isEmpty || paymentId.startsWith('manual_')) return 'manual';
+
+    final inFlightCheck = _paymentStatusChecksInFlight[paymentId];
+    if (inFlightCheck != null) return inFlightCheck;
+
+    final now = DateTime.now();
+    final stalePaymentIds = _lastPaymentStatusCheckAt.entries
+        .where(
+          (entry) => now.difference(entry.value) > const Duration(minutes: 2),
+        )
+        .map((entry) => entry.key)
+        .toList();
+    for (final stalePaymentId in stalePaymentIds) {
+      _lastPaymentStatusCheckAt.remove(stalePaymentId);
+      _lastPaymentStatuses.remove(stalePaymentId);
+    }
+    final lastCheckedAt = _lastPaymentStatusCheckAt[paymentId];
+    if (lastCheckedAt != null &&
+        now.difference(lastCheckedAt) < PaymentPollingPolicy.interval) {
+      return _lastPaymentStatuses[paymentId] ?? 'pending';
+    }
+
+    final check = _fetchPaymentStatus(paymentId);
+    _paymentStatusChecksInFlight[paymentId] = check;
+    try {
+      final status = await check;
+      if (status != 'error') {
+        _lastPaymentStatusCheckAt[paymentId] = DateTime.now();
+        _lastPaymentStatuses[paymentId] = status;
+      }
+      return status;
+    } catch (e) {
+      print("Erro polling: $e");
+      return 'error';
+    } finally {
+      if (identical(_paymentStatusChecksInFlight[paymentId], check)) {
+        _paymentStatusChecksInFlight.remove(paymentId);
+      }
+    }
+  }
+
+  Future<String> _fetchPaymentStatus(String paymentId) async {
     try {
       final result = await _functions
           .httpsCallable('checkAndProcessPayment')
           .call({'paymentId': paymentId});
-      return result.data['status'] ?? 'pending';
+      return result.data['status']?.toString() ?? 'pending';
     } catch (e) {
       print("Erro polling: $e");
       return 'error';

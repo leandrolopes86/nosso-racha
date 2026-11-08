@@ -47,9 +47,13 @@ class EventInfoHeader extends StatelessWidget {
                       _buildInfoRow(
                         context,
                         LucideIcons.calendar,
-                        DateFormat(
-                          'dd/MM/yyyy HH:mm',
-                        ).format(event.startDateTime),
+                        'Início: ${DateFormat('dd/MM/yyyy HH:mm').format(event.startDateTime)}',
+                      ),
+                      const SizedBox(height: 4),
+                      _buildInfoRow(
+                        context,
+                        LucideIcons.clock,
+                        'Fim: ${DateFormat('dd/MM/yyyy HH:mm').format(event.endDateTime)}',
                       ),
                       const SizedBox(height: 4),
                       _buildInfoRow(context, Icons.sports, event.sportLabel),

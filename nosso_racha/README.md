@@ -72,32 +72,35 @@ Confirme que `lib/firebase_options.dart` e os arquivos nativos de configuração
 As regras de acesso estão em `firestore.rules` e os índices das consultas estão em `firestore.indexes.json`. Antes de implantar as regras, audite e migre os dados legados. A Home descobre organizações por `groups/{groupId}/members/{uid}` e também combina os IDs legados em `users.group_ids`/`users.group_id`.
 As regras permitem que cada usuário altere apenas os campos editáveis do próprio perfil; plano, permissões e dados administrativos não podem ser alterados pelo cliente comum. A validação de posição Free/VIP e da chave PIX de goleiro também é aplicada nas regras do Firestore.
 
-Os limites de plano aplicados pelo aplicativo são centralizados em
+Os limites padrão aplicados pelo aplicativo são centralizados em
 `lib/models/plan_limits.dart`: atletas Free podem integrar até 2 organizações,
 Atletas VIP até 10. Organizadores não VIP podem participar de até 2
 organizações existentes, mas não criar comunidades; podem administrar as
 organizações em que têm acesso. Organizador VIP pode criar comunidades
 ilimitadas e participar de até 10 organizações; tem também eventos ilimitados.
 Organizadores não VIP podem manter 3 rachas abertos simultaneamente, 40 atletas
-e 3 co-organizadores por organização. Esses limites também são aplicados pelas
-regras do Firestore: alterações dos contadores acontecem na mesma transação
-que cria, remove ou muda o estado do evento/membro correspondente. A quantidade
-de organizações do atleta é limitada pelo índice `users.group_ids`, validado
-pelas regras.
+e 3 co-organizadores por organização. As regras do Firestore também aplicam os
+limites configurados de participação e capacidade das organizações por meio de
+atualizações atômicas dos contadores. O limite `maxOwnedOrganizations` é
+validado no cliente; não é aplicado independentemente pelas regras do Firestore.
 
-Os recursos administrativos VIP por organização são definidos em
-`lib/models/vip_plans_config.dart` e verificados com o vínculo de proprietário
-ou co-organizador em `lib/services/group_plan_service.dart`. O perfil do usuário
-é sincronizado em tempo real a partir de `users/{uid}`; não depende de custom
-claims para refletir alterações de plano. O painel administrativo grava
-`vipPlan` e `vipExpiresAt` no usuário ou no grupo. Um `Platinum` vigente
-concede o plano `organizer_vip`; os demais níveis pagos concedem
-`athlete_vip`. A validade é obrigatória para esses campos e planos vencidos não
-concedem benefícios. O formato legado de assinatura do proprietário continua
+Os recursos e limites dos planos Free, Bronze, Silver, Gold e Platinum são
+carregados de `settings/vip_plans` no Firestore durante a inicialização e
+modelados em `lib/models/vip_plans_config.dart`.
+Enquanto o catálogo remoto não estiver configurado ou disponível, o app mantém
+os limites padrões locais e registra a falha no log. O painel grava `vipPlan`
+e `vipExpiresAt` no perfil; os IDs desses tiers são fixos. Cada plano mapeia
+para acesso Free, atleta VIP ou organizador VIP, e pode definir limites de
+organizações, eventos, atletas, co-organizadores e recursos. Os nomes legados
+`prata` e `ouro` continuam reconhecidos como Silver e Gold. O acesso às
+funcionalidades administrativas VIP continua verificado pelo vínculo de
+proprietário ou co-organizador em `lib/services/group_plan_service.dart`.
+A validade é obrigatória e planos vencidos não concedem benefícios. O formato
+legado de assinatura do proprietário continua
 aceito por `plan`, `subscription.status` ou `plan_status` e,
 opcionalmente, `subscription.expires_at` ou `plan_expires_at`. As regras do
-Firestore aplicam as mesmas permissões e limites. As configurações gerais e de
-pagamento ficam em
+Firestore aplicam as permissões e os limites de eventos e membros configurados.
+As configurações gerais e de pagamento ficam em
 `groups/{groupId}/settings/general` e
 `groups/{groupId}/settings/payment_gateway`; eventos e lançamentos financeiros
 usam o mesmo `group_id` para manter cada painel isolado.

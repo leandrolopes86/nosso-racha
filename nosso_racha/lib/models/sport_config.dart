@@ -1,4 +1,12 @@
 class SportConfig {
+  static const int minimumLinePlayersPerTeam = 2;
+  static const int maximumLinePlayersPerTeam = 10;
+
+  static List<int> get linePlayersPerTeamOptions => List.generate(
+    maximumLinePlayersPerTeam - minimumLinePlayersPerTeam + 1,
+    (index) => minimumLinePlayersPerTeam + index,
+  );
+
   final String id;
   final String label;
   final int defaultLinePlayersPerTeam;
