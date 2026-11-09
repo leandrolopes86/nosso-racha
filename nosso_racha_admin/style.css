@@ -1181,6 +1181,14 @@ button {
   display: block;
   width: 100%;
   min-height: 44px;
+  color-scheme: light;
+  --gmpx-color-surface: #fff;
+  --gmpx-color-on-surface: var(--ink);
+  --gmpx-color-on-surface-variant: var(--muted);
+  --gmpx-color-primary: var(--green);
+  --gmpx-color-outline: var(--line);
+  --gmpx-color-outline-variant: var(--line);
+  --gmpx-font-family-base: "DM Sans", sans-serif;
 }
 
 .venue-cep-lookup {
