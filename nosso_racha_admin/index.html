@@ -341,7 +341,30 @@
             <label class="field-label" for="approvalVenueName">Nome do campo ou complexo</label>
             <input id="approvalVenueName" class="text-field mt-2" required maxlength="120" />
             <label id="approvalPlaceSearchLabel" class="field-label mt-5">Buscar no Google Maps</label>
-            <div id="approvalPlaceSearch" class="venue-place-search mt-2"></div>
+            <div id="approvalPlaceSearch" class="venue-place-search mt-2">
+              <input
+                id="approvalPlaceSearchInput"
+                class="text-field venue-place-input"
+                type="search"
+                placeholder="Busque pelo nome ou endereço"
+                autocomplete="off"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded="false"
+                aria-controls="approvalPlaceSearchResults"
+                aria-labelledby="approvalPlaceSearchLabel"
+                disabled
+              />
+              <div id="approvalPlaceSearchResults" class="venue-place-results hidden">
+                <ul
+                  id="approvalPlaceSearchOptions"
+                  class="venue-place-options"
+                  role="listbox"
+                  aria-label="Resultados do Google Maps"
+                ></ul>
+                <div class="venue-place-attribution" translate="no">Google Maps</div>
+              </div>
+            </div>
             <p id="venuePlaceSearchStatus" class="muted mt-2" role="status"></p>
             <label class="field-label mt-5" for="approvalVenueAddress">Endereço</label>
             <textarea id="approvalVenueAddress" class="text-field venue-address-field mt-2" required maxlength="500"></textarea>

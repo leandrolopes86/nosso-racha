@@ -74,6 +74,9 @@ const elements = {
   venueApprovalTitle: document.querySelector("#venueApprovalTitle"),
   approvalVenueName: document.querySelector("#approvalVenueName"),
   approvalPlaceSearch: document.querySelector("#approvalPlaceSearch"),
+  approvalPlaceSearchInput: document.querySelector("#approvalPlaceSearchInput"),
+  approvalPlaceSearchResults: document.querySelector("#approvalPlaceSearchResults"),
+  approvalPlaceSearchOptions: document.querySelector("#approvalPlaceSearchOptions"),
   venuePlaceSearchStatus: document.querySelector("#venuePlaceSearchStatus"),
   approvalVenueAddress: document.querySelector("#approvalVenueAddress"),
   approvalVenueCep: document.querySelector("#approvalVenueCep"),
@@ -112,6 +115,12 @@ let editingVenueId;
 let manualVenueRef;
 let googleMapsLoadPromise;
 let venuePlaceSearchVersion = 0;
+let venuePlaceSearchRequestVersion = 0;
+let venuePlaceSearchTimer;
+let venuePlacePredictions = [];
+let venuePlaceActiveIndex = -1;
+let venueAutocompleteSessionToken;
+let venuePlacesLibrary;
 let googleMapsLoadTimeout;
 let vipPlansController;
 
@@ -860,36 +869,158 @@ async function loadGooglePlaces() {
 
 async function setupVenuePlaceSearch() {
   const setupVersion = ++venuePlaceSearchVersion;
-  elements.approvalPlaceSearch.replaceChildren();
+  clearVenuePlaceSearch();
+  elements.approvalPlaceSearchInput.disabled = true;
   elements.venuePlaceSearchStatus.textContent = "";
   try {
-    const places = await loadGooglePlaces();
+    venuePlacesLibrary = await loadGooglePlaces();
     if (setupVersion !== venuePlaceSearchVersion) return;
-    const autocomplete = new places.PlaceAutocompleteElement({
-      includedRegionCodes: ["br"],
-    });
-    autocomplete.placeholder = "Busque pelo nome ou endereço";
-    autocomplete.className = "text-field venue-place-autocomplete";
-    autocomplete.setAttribute("aria-labelledby", "approvalPlaceSearchLabel");
-    autocomplete.addEventListener("gmp-select", (event) => {
-      void selectVenuePlace(event.placePrediction);
-    });
-    elements.approvalPlaceSearch.append(autocomplete);
+    elements.approvalPlaceSearchInput.disabled = false;
   } catch (error) {
     if (setupVersion !== venuePlaceSearchVersion) return;
     elements.venuePlaceSearchStatus.textContent = error.message;
   }
 }
 
+function clearVenuePlaceSearch() {
+  window.clearTimeout(venuePlaceSearchTimer);
+  venuePlaceSearchRequestVersion += 1;
+  venuePlacePredictions = [];
+  venuePlaceActiveIndex = -1;
+  venueAutocompleteSessionToken = undefined;
+  elements.approvalPlaceSearchInput.value = "";
+  elements.approvalPlaceSearchInput.setAttribute("aria-expanded", "false");
+  elements.approvalPlaceSearchInput.removeAttribute("aria-activedescendant");
+  elements.approvalPlaceSearchResults.classList.add("hidden");
+  elements.approvalPlaceSearchOptions.replaceChildren();
+}
+
+function renderVenuePlacePredictions(suggestions) {
+  venuePlacePredictions = suggestions
+    .map((suggestion) => suggestion.placePrediction)
+    .filter(Boolean);
+  venuePlaceActiveIndex = -1;
+  elements.approvalPlaceSearchOptions.replaceChildren();
+  for (const [index, prediction] of venuePlacePredictions.entries()) {
+    const option = document.createElement("button");
+    option.className = "venue-place-option";
+    option.type = "button";
+    option.id = `venuePlaceOption${index}`;
+    option.setAttribute("role", "option");
+    option.setAttribute("aria-selected", "false");
+    option.textContent = prediction.text.toString();
+    option.addEventListener("pointerdown", (event) => event.preventDefault());
+    option.addEventListener("click", () => {
+      void selectVenuePlace(prediction);
+    });
+    elements.approvalPlaceSearchOptions.append(option);
+  }
+  elements.approvalPlaceSearchResults.classList.toggle(
+    "hidden",
+    venuePlacePredictions.length === 0,
+  );
+  elements.approvalPlaceSearchInput.setAttribute(
+    "aria-expanded",
+    String(venuePlacePredictions.length > 0),
+  );
+}
+
+function requestVenuePlacePredictions() {
+  window.clearTimeout(venuePlaceSearchTimer);
+  const requestVersion = ++venuePlaceSearchRequestVersion;
+  const input = elements.approvalPlaceSearchInput.value.trim();
+  venuePlacePredictions = [];
+  venuePlaceActiveIndex = -1;
+  elements.approvalPlaceSearchOptions.replaceChildren();
+  elements.approvalPlaceSearchResults.classList.add("hidden");
+  elements.approvalPlaceSearchInput.setAttribute("aria-expanded", "false");
+  elements.approvalPlaceSearchInput.removeAttribute("aria-activedescendant");
+  elements.venuePlaceSearchStatus.textContent = "";
+  if (input.length < 2) return;
+
+  venuePlaceSearchTimer = window.setTimeout(async () => {
+    try {
+      if (!venueAutocompleteSessionToken) {
+        venueAutocompleteSessionToken =
+          new venuePlacesLibrary.AutocompleteSessionToken();
+      }
+      const { suggestions } =
+        await venuePlacesLibrary.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+          input,
+          includedRegionCodes: ["br"],
+          language: "pt-BR",
+          region: "br",
+          sessionToken: venueAutocompleteSessionToken,
+        });
+      if (requestVersion !== venuePlaceSearchRequestVersion) return;
+      renderVenuePlacePredictions(suggestions);
+      if (venuePlacePredictions.length === 0) {
+        elements.venuePlaceSearchStatus.textContent =
+          "Nenhum resultado encontrado para essa busca.";
+      }
+    } catch (error) {
+      if (requestVersion !== venuePlaceSearchRequestVersion) return;
+      elements.venuePlaceSearchStatus.textContent =
+        `Não foi possível buscar locais no Google Maps: ${error.message}`;
+    }
+  }, 250);
+}
+
+function handleVenuePlaceSearchKeydown(event) {
+  if (event.key === "Escape") {
+    elements.approvalPlaceSearchResults.classList.add("hidden");
+    elements.approvalPlaceSearchInput.setAttribute("aria-expanded", "false");
+    elements.approvalPlaceSearchInput.removeAttribute("aria-activedescendant");
+    venuePlaceActiveIndex = -1;
+    venuePlacePredictions = [];
+    elements.approvalPlaceSearchOptions.replaceChildren();
+    return;
+  }
+  if (venuePlacePredictions.length === 0) return;
+
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    const direction = event.key === "ArrowDown" ? 1 : -1;
+    venuePlaceActiveIndex =
+      (venuePlaceActiveIndex + direction + venuePlacePredictions.length) %
+      venuePlacePredictions.length;
+    for (const [index, option] of [
+      ...elements.approvalPlaceSearchOptions.children,
+    ].entries()) {
+      option.setAttribute(
+        "aria-selected",
+        String(index === venuePlaceActiveIndex),
+      );
+    }
+    elements.approvalPlaceSearchInput.setAttribute(
+      "aria-activedescendant",
+      `venuePlaceOption${venuePlaceActiveIndex}`,
+    );
+    return;
+  }
+  if (event.key === "Enter" && venuePlaceActiveIndex >= 0) {
+    event.preventDefault();
+    void selectVenuePlace(venuePlacePredictions[venuePlaceActiveIndex]);
+  }
+}
+
 async function selectVenuePlace(placePrediction) {
   if (!placePrediction) return;
+  const selectionVersion = venuePlaceSearchVersion;
   hideMessage(elements.venueApprovalMessage);
   elements.venuePlaceSearchStatus.textContent = "Carregando dados do local…";
+  elements.approvalPlaceSearchInput.value = placePrediction.text.toString();
+  elements.approvalPlaceSearchInput.disabled = true;
+  elements.approvalPlaceSearchResults.classList.add("hidden");
+  elements.approvalPlaceSearchInput.setAttribute("aria-expanded", "false");
+  venuePlaceSearchRequestVersion += 1;
+  window.clearTimeout(venuePlaceSearchTimer);
   try {
     const place = placePrediction.toPlace();
     await place.fetchFields({
       fields: ["displayName", "formattedAddress", "location"],
     });
+    if (selectionVersion !== venuePlaceSearchVersion) return;
     if (!place.location) {
       throw new Error("O resultado selecionado não possui coordenadas.");
     }
@@ -902,8 +1033,18 @@ async function selectVenuePlace(placePrediction) {
     elements.venuePlaceSearchStatus.textContent =
       "Local selecionado. Endereço e coordenadas preenchidos.";
   } catch (error) {
+    if (selectionVersion !== venuePlaceSearchVersion) return;
     elements.venuePlaceSearchStatus.textContent =
       `Não foi possível carregar o local selecionado: ${error.message}`;
+  } finally {
+    if (selectionVersion === venuePlaceSearchVersion) {
+      venueAutocompleteSessionToken = undefined;
+      elements.approvalPlaceSearchInput.disabled = false;
+      elements.approvalPlaceSearchInput.removeAttribute("aria-activedescendant");
+      venuePlacePredictions = [];
+      venuePlaceActiveIndex = -1;
+      elements.approvalPlaceSearchOptions.replaceChildren();
+    }
   }
 }
 
@@ -1305,6 +1446,23 @@ function initialize() {
   });
   elements.searchInput.addEventListener("input", renderRecords);
   elements.addVenueButton.addEventListener("click", openManualVenueForm);
+  elements.approvalPlaceSearchInput.addEventListener(
+    "input",
+    requestVenuePlacePredictions,
+  );
+  elements.approvalPlaceSearchInput.addEventListener(
+    "keydown",
+    handleVenuePlaceSearchKeydown,
+  );
+  elements.approvalPlaceSearchInput.addEventListener("blur", () => {
+    window.setTimeout(() => {
+      if (elements.approvalPlaceSearch.contains(document.activeElement)) return;
+      elements.approvalPlaceSearchResults.classList.add("hidden");
+      elements.approvalPlaceSearchInput.setAttribute("aria-expanded", "false");
+      elements.approvalPlaceSearchInput.removeAttribute("aria-activedescendant");
+      venuePlaceActiveIndex = -1;
+    }, 0);
+  });
   elements.lookupVenueCepButton.addEventListener("click", lookupVenueCep);
   elements.closeRecordDetailsButton.addEventListener("click", () => {
     elements.recordDetailsDialog.close();
@@ -1315,6 +1473,13 @@ function initialize() {
   });
   elements.cancelVenueApprovalButton.addEventListener("click", () => {
     elements.venueApprovalDialog.close();
+  });
+  elements.venueApprovalDialog.addEventListener("close", () => {
+    venuePlaceSearchVersion += 1;
+    venuePlacesLibrary = undefined;
+    elements.approvalPlaceSearchInput.disabled = true;
+    elements.venuePlaceSearchStatus.textContent = "";
+    clearVenuePlaceSearch();
   });
   elements.recordDetailsDialog.addEventListener("click", (event) => {
     if (event.target === elements.recordDetailsDialog) {
