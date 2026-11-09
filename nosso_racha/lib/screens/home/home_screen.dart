@@ -506,6 +506,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final startTime = DateFormat('HH:mm').format(event.startDateTime);
     final endTime = DateFormat('HH:mm').format(event.endDateTime);
     final mapDestination = _eventMapDestination(event);
+    final locationCityState = [event.city, event.state]
+        .whereType<String>()
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .join(' - ');
 
     return Card(
       elevation: 2,
@@ -617,6 +622,18 @@ class _HomeScreenState extends State<HomeScreen> {
                         ],
                       ),
                     ),
+                  ),
+                ),
+              ],
+              if (locationCityState.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Padding(
+                  padding: const EdgeInsets.only(left: 22),
+                  child: Text(
+                    locationCityState,
+                    style: TextStyle(color: subtitleColor, fontSize: 12),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
