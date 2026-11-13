@@ -3,6 +3,7 @@ const sections = new Set([
   "records",
   "vip-plans",
   "vip-payments",
+  "vip-payment-history",
   "vip-coupons",
   "venues",
   "finance",

@@ -123,6 +123,10 @@
                 <span class="sidebar-icon" aria-hidden="true">▣</span>
                 <span>Pagamento VIP</span>
               </button>
+              <button class="sidebar-link flex items-center gap-3" type="button" data-nav-target="vip-payment-history">
+                <span class="sidebar-icon" aria-hidden="true">↻</span>
+                <span>Pagamentos e devoluções</span>
+              </button>
               <button class="sidebar-link flex items-center gap-3" type="button" data-nav-target="vip-coupons">
                 <span class="sidebar-icon" aria-hidden="true">％</span>
                 <span>Cupons de desconto</span>
@@ -366,6 +370,45 @@
               </div>
               <div id="vipPaymentRequests" class="venue-requests-list" aria-live="polite">
                 <p class="empty-state">Carregando solicitações…</p>
+              </div>
+            </section>
+          </section>
+          <section class="page-section hidden" data-page-section="vip-payment-history" aria-labelledby="vipPaymentHistoryTitle">
+            <div class="page-heading">
+              <div>
+                <div class="eyebrow">ASSINATURAS</div>
+                <h1 id="vipPaymentHistoryTitle" class="page-title mt-2">Pagamentos e devoluções</h1>
+                <p class="muted mt-2">Acompanhe os pagamentos VIP e solicite devoluções integrais do Mercado Pago em até 7 dias da aprovação.</p>
+              </div>
+              <button id="refreshVipPaymentHistory" class="button button-outline" type="button">Atualizar</button>
+            </div>
+            <div class="vip-refund-notice mt-6">
+              <strong>Prazo de desistência</strong>
+              <span>As devoluções pelo painel são integrais, feitas pelo Mercado Pago e disponíveis por até 7 dias após a aprovação. Solicitações de Pix manual precisam ser devolvidas fora do Mercado Pago.</span>
+            </div>
+            <div id="vipPaymentHistoryMessage" class="notice hidden mt-6" role="status" aria-live="polite"></div>
+            <div class="vip-payment-history-filters mt-6">
+              <label class="field-label" for="vipPaymentHistorySearch">
+                Buscar pagamentos
+                <input id="vipPaymentHistorySearch" class="text-field mt-2" type="search" placeholder="Nome, e-mail ou ID" />
+              </label>
+              <label class="field-label" for="vipPaymentHistoryStatus">
+                Situação
+                <select id="vipPaymentHistoryStatus" class="select-field mt-2">
+                  <option value="all">Todas</option>
+                  <option value="pending">Pendente</option>
+                  <option value="approved">Aprovado</option>
+                  <option value="rejected">Recusado</option>
+                  <option value="cancelled">Cancelado</option>
+                  <option value="partial">Devolução parcial</option>
+                  <option value="refunded">Devolvido</option>
+                </select>
+              </label>
+            </div>
+            <section class="table-card mt-6" aria-label="Histórico de pagamentos VIP">
+              <div id="vipPaymentHistorySummary" class="vip-payment-history-summary muted" aria-live="polite"></div>
+              <div id="vipPaymentHistoryList" class="venue-requests-list" aria-live="polite">
+                <p class="empty-state">Carregando pagamentos…</p>
               </div>
             </section>
           </section>

@@ -4,6 +4,7 @@ import 'models/vip_plans_config.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'home_publica_view.dart';
+import 'screens/vip/vip_plans_screen.dart';
 import 'services/theme_service.dart';
 
 import 'services/auth_service.dart';
@@ -58,6 +59,7 @@ class NossoRachaApp extends StatelessWidget {
           title: 'Nosso Racha',
           debugShowCheckedModeBanner: false,
           theme: themeService.getThemeData(),
+          routes: {'/vip-checkout-return': (_) => const VipPlansScreen()},
           home: const HomePublicaView(),
         ),
       ),

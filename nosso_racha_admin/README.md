@@ -21,7 +21,7 @@ as permissões do Firestore.
 
 O painel é uma aplicação de página única. `navigation.js` controla a barra
 lateral responsiva e alterna as seções de visão geral, cadastros, planos VIP,
-moderação de campos e financeiro sem recarregar a página. O módulo financeiro
+pagamentos e devoluções, moderação de campos e financeiro sem recarregar a página. O módulo financeiro
 está indicado na navegação, mas ainda não consolida os caixas das organizações.
 
 ## Catálogo de planos VIP
@@ -57,6 +57,16 @@ existentes.
 Na seção **Pagamento VIP**, configure o método de cobrança e os dados do Pix ou
 Mercado Pago. O salvamento da configuração de pagamento é feito pela callable
 administrativa `saveVipPaymentConfig`.
+
+Na seção **Pagamentos e devoluções**, o painel lista os pedidos Mercado Pago e
+as solicitações de Pix manual mais recentes. Pagamentos Mercado Pago aprovados
+podem receber uma solicitação de devolução integral em até sete dias da aprovação.
+A solicitação usa a API do Mercado Pago e o status final é confirmado pelo
+backend; quando concluída, o período VIP correspondente é ajustado. Se o
+histórico não permitir um ajuste seguro, o painel sinaliza a necessidade de
+revisão manual. Devoluções de Pix manual precisam ser feitas fora do Mercado
+Pago. A listagem e a ação de devolução usam callables protegidas pelo custom
+claim `admin: true`.
 
 Na seção separada **Cupons de desconto**, cada cupom pode valer para um ou mais
 planos, aplicar desconto percentual, valor fixo ou definir o preço final do VIP.

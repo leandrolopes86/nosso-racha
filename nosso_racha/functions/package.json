@@ -6,8 +6,8 @@
   },
   "main": "index.js",
   "scripts": {
-    "lint": "node --check index.js && node --check vip-coupon-utils.js",
-    "test": "node --test vip-coupon-utils.test.js"
+    "lint": "node --check index.js && node --check vip-coupon-utils.js && node --check vip-checkout-utils.js",
+    "test": "node --test vip-coupon-utils.test.js vip-checkout-utils.test.js"
   },
   "dependencies": {
     "firebase-admin": "^13.0.0",

@@ -20,6 +20,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { initializeNavigation } from "./navigation.js";
 import { initializeVipPayments } from "./vip-payment-config.js";
+import { initializeVipPaymentHistory } from "./vip-payment-history.js";
 import {
   getVipPlanCatalog,
   initializeVipPlans,
@@ -124,6 +125,7 @@ let venuePlacesLibrary;
 let googleMapsLoadTimeout;
 let vipPlansController;
 let vipPaymentsController;
+let vipPaymentHistoryController;
 
 function showMessage(element, message, kind = "error") {
   element.textContent = message;
@@ -1400,6 +1402,11 @@ async function showAdminDashboard(user) {
     hideDashboardMessage: () => hideMessage(elements.dashboardMessage),
   });
   vipPaymentsController.start();
+  vipPaymentHistoryController ??= initializeVipPaymentHistory({
+    showDashboardMessage: (message, kind) => showMessage(elements.dashboardMessage, message, kind),
+    hideDashboardMessage: () => hideMessage(elements.dashboardMessage),
+  });
+  vipPaymentHistoryController.start();
   listenToCollection(elements.collectionSelect.value);
   listenToPendingVenues();
   listenToVenues();
@@ -1431,6 +1438,8 @@ function initialize() {
       vipPlansController = undefined;
       vipPaymentsController?.stop();
       vipPaymentsController = undefined;
+      vipPaymentHistoryController?.stop();
+      vipPaymentHistoryController = undefined;
       pendingVenueRequests = [];
       venues = [];
       records = [];

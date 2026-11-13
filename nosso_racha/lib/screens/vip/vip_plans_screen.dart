@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../models/user_model.dart';
 import '../../models/vip_plans_config.dart';
 import '../../services/auth_service.dart';
@@ -19,7 +21,8 @@ class VipPlansScreen extends StatefulWidget {
   State<VipPlansScreen> createState() => _VipPlansScreenState();
 }
 
-class _VipPlansScreenState extends State<VipPlansScreen> {
+class _VipPlansScreenState extends State<VipPlansScreen>
+    with WidgetsBindingObserver {
   static const _planIds = ['bronze', 'silver', 'gold', 'platinum'];
   final _functions = FirebaseFunctions.instanceFor(
     region: 'southamerica-east1',
@@ -40,6 +43,7 @@ class _VipPlansScreenState extends State<VipPlansScreen> {
   String? _couponMessage;
   bool _couponError = false;
   String? _orderId;
+  String? _checkoutUrl;
   String? _paymentQrCode;
   String? _paymentQrBase64;
   DateTime? _paymentExpiresAt;
@@ -55,11 +59,29 @@ class _VipPlansScreenState extends State<VipPlansScreen> {
   bool _restoreScheduled = false;
   bool _isCheckingPayment = false;
   bool _isCancellingPayment = false;
+  bool _isOpeningCheckout = false;
+  bool _isLegacyPixOrder = false;
   String? _restorationUid;
+  Timer? _paymentPollingTimer;
   final Set<String> _expiredNoticeShownOrderIds = {};
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _hasPendingMercadoPagoPayment) {
+      unawaited(_checkMercadoPagoPayment(_orderId!, showPendingMessage: false));
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _paymentPollingTimer?.cancel();
     final orderSubscription = _orderSubscription;
     if (orderSubscription != null) unawaited(orderSubscription.cancel());
     _couponCodeController.dispose();
@@ -109,6 +131,36 @@ class _VipPlansScreenState extends State<VipPlansScreen> {
       !_hasPendingMercadoPagoPayment &&
       !(_orderId != null && _orderStatus == 'expired');
 
+  void _startMercadoPagoPaymentPolling(String orderId) {
+    _paymentPollingTimer?.cancel();
+    _paymentPollingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!mounted ||
+          _orderId != orderId ||
+          !_hasPendingMercadoPagoPayment ||
+          _paymentExpired) {
+        return;
+      }
+      unawaited(_checkMercadoPagoPayment(orderId, showPendingMessage: false));
+    });
+  }
+
+  void _stopMercadoPagoPaymentPolling() {
+    _paymentPollingTimer?.cancel();
+    _paymentPollingTimer = null;
+  }
+
+  void _clearCoupon() {
+    _couponValidationGeneration++;
+    _couponCodeController.clear();
+    if (!mounted) return;
+    setState(() {
+      _isValidatingCoupon = false;
+      _validatedCoupon = null;
+      _couponMessage = null;
+      _couponError = false;
+    });
+  }
+
   void _watchMercadoPagoOrder(String orderId) {
     final previousSubscription = _orderSubscription;
     if (previousSubscription != null) {
@@ -123,6 +175,16 @@ class _VipPlansScreenState extends State<VipPlansScreen> {
         setState(
           () => _orderStatus = cancelReason == 'expired' ? 'expired' : status,
         );
+        if (status == 'approved' ||
+            status == 'expired' ||
+            cancelReason == 'expired') {
+          _clearCoupon();
+        }
+        if (status == 'pending' && cancelReason != 'expired') {
+          _startMercadoPagoPaymentPolling(orderId);
+        } else {
+          _stopMercadoPagoPaymentPolling();
+        }
         if (status == 'approved') _reloadVipUser();
         if (cancelReason == 'expired') {
           unawaited(_showExpiredPaymentDialog(orderId));
@@ -269,7 +331,7 @@ class _VipPlansScreenState extends State<VipPlansScreen> {
       if (config['provider'] == 'pix_manual') {
         await _showManualPixDialog(config, finalAmount, couponCode);
       } else if (config['provider'] == 'mercadopago') {
-        await _createMercadoPagoPayment(couponCode);
+        await _createMercadoPagoCheckout(couponCode);
       } else {
         throw StateError('Nenhum meio de pagamento VIP está ativo.');
       }
@@ -366,18 +428,22 @@ class _VipPlansScreenState extends State<VipPlansScreen> {
     if (mounted) setState(() => _manualRequestSent = true);
   }
 
-  Future<void> _createMercadoPagoPayment(String? couponCode) async {
-    final callable = _functions.httpsCallable('createVipMercadoPagoPix');
+  Future<void> _createMercadoPagoCheckout(String? couponCode) async {
+    final callable = _functions.httpsCallable('createVipMercadoPagoCheckout');
     final result = await callable.call({
       'plan': _selectedPlan,
       'couponCode': couponCode,
     });
     final data = Map<String, dynamic>.from(result.data as Map);
     final orderId = data['orderId'];
-    final qrCode = data['qrCode'];
+    final checkoutUrl = data['checkoutUrl'];
     final expiresAtValue = data['expiresAt'];
-    if (orderId is! String || qrCode is! String || expiresAtValue is! String) {
-      throw StateError('A resposta do Mercado Pago não contém um Pix válido.');
+    if (orderId is! String ||
+        checkoutUrl is! String ||
+        expiresAtValue is! String) {
+      throw StateError(
+        'A resposta do Mercado Pago não contém um checkout válido.',
+      );
     }
     final expiresAt = DateTime.tryParse(expiresAtValue);
     if (expiresAt == null) {
@@ -388,27 +454,85 @@ class _VipPlansScreenState extends State<VipPlansScreen> {
     if (!mounted) return;
     setState(() {
       _orderId = orderId;
-      _paymentQrCode = qrCode;
-      _paymentQrBase64 = data['qrCodeBase64'] as String?;
+      _checkoutUrl = checkoutUrl;
+      _isLegacyPixOrder = false;
+      _paymentQrCode = null;
+      _paymentQrBase64 = null;
       _paymentExpiresAt = expiresAt;
       _paymentExpired = false;
       _orderStatus = 'pending';
       _orderReloadScheduled = false;
     });
     _watchMercadoPagoOrder(orderId);
+    await _openMercadoPagoCheckout(orderId);
+  }
+
+  Future<void> _openMercadoPagoCheckout(String orderId) async {
+    final checkoutUrl = _checkoutUrl;
+    if (checkoutUrl == null || _isOpeningCheckout) return;
+    final inAppBrowserSupported =
+        !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS);
+    setState(() => _isOpeningCheckout = true);
+    try {
+      final uri = Uri.tryParse(checkoutUrl);
+      if (uri == null ||
+          uri.scheme != 'https' ||
+          !(uri.host == 'mercadopago.com.br' ||
+              uri.host.endsWith('.mercadopago.com.br') ||
+              uri.host == 'mercadopago.com' ||
+              uri.host.endsWith('.mercadopago.com'))) {
+        throw StateError('O link de checkout do Mercado Pago é inválido.');
+      }
+      final launched = await launchUrl(
+        uri,
+        mode: inAppBrowserSupported
+            ? LaunchMode.inAppBrowserView
+            : LaunchMode.platformDefault,
+      );
+      if (!launched) {
+        throw StateError('Não foi possível abrir o checkout do Mercado Pago.');
+      }
+      if (mounted &&
+          _orderId == orderId &&
+          _orderStatus == 'pending' &&
+          _paymentQrCode == null) {
+        await _checkMercadoPagoPayment(orderId, showPendingMessage: false);
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _paymentError = _callableErrorMessage(error));
+      }
+    } finally {
+      if (mounted) setState(() => _isOpeningCheckout = false);
+    }
   }
 
   Future<void> _restoreMercadoPagoOrder(String uid) async {
     if (_isRestoringOrder) return;
     if (mounted) setState(() => _isRestoringOrder = true);
     try {
-      final result = await _functions
-          .httpsCallable('getVipMercadoPagoOrder')
+      var isLegacyPixOrder = false;
+      var result = await _functions
+          .httpsCallable('getVipMercadoPagoCheckoutOrder')
           .call();
-      final data = Map<String, dynamic>.from(result.data as Map);
+      var data = Map<String, dynamic>.from(result.data as Map);
+      if (data['status'] == 'none') {
+        isLegacyPixOrder = true;
+        result = await _functions
+            .httpsCallable('getVipMercadoPagoOrder')
+            .call();
+        data = Map<String, dynamic>.from(result.data as Map);
+      }
       final status = data['status'] as String?;
       if (status == null || status == 'none') return;
       if (!mounted || context.read<AuthService>().currentUser?.uid != uid) {
+        return;
+      }
+      if (status == 'approved') {
+        _clearCoupon();
+        _reloadVipUser();
         return;
       }
 
@@ -422,15 +546,21 @@ class _VipPlansScreenState extends State<VipPlansScreen> {
           ? DateTime.tryParse(expiresAtValue)
           : null;
       final qrCode = data['qrCode'];
-      if (status == 'pending' && (qrCode is! String || expiresAt == null)) {
-        throw StateError('O pedido VIP não contém os dados do Pix pendente.');
+      final checkoutUrl = data['checkoutUrl'];
+      if (status == 'pending' &&
+          ((qrCode is! String && checkoutUrl is! String) ||
+              expiresAt == null)) {
+        throw StateError('O pedido VIP não contém os dados do pagamento.');
       }
 
       if (!mounted) return;
+      if (status == 'expired') _clearCoupon();
       setState(() {
         _orderId = orderId;
         _orderStatus = status;
         _selectedPlan = plan;
+        _isLegacyPixOrder = isLegacyPixOrder;
+        _checkoutUrl = checkoutUrl is String ? checkoutUrl : null;
         _paymentQrCode = qrCode is String ? qrCode : null;
         _paymentQrBase64 = data['qrCodeBase64'] as String?;
         _paymentExpiresAt = expiresAt;
@@ -462,30 +592,48 @@ class _VipPlansScreenState extends State<VipPlansScreen> {
     }
   }
 
-  Future<void> _checkMercadoPagoPayment(String orderId) async {
+  Future<void> _checkMercadoPagoPayment(
+    String orderId, {
+    bool showPendingMessage = true,
+  }) async {
     if (_isCheckingPayment) return;
     setState(() => _isCheckingPayment = true);
     try {
       final result = await _functions
-          .httpsCallable('checkVipMercadoPagoPix')
+          .httpsCallable(
+            _isLegacyPixOrder
+                ? 'checkVipMercadoPagoPix'
+                : 'checkVipMercadoPagoCheckout',
+          )
           .call({'orderId': orderId});
       final data = Map<String, dynamic>.from(result.data as Map);
       final status = data['status'] as String? ?? 'pending';
       final cancelReason = data['cancelReason'] as String?;
+      final effectiveStatus = cancelReason == 'expired' ? 'expired' : status;
       if (!mounted) return;
+      if (status == 'approved' || effectiveStatus == 'expired') {
+        _clearCoupon();
+      }
       setState(() {
-        _orderStatus = cancelReason == 'expired' ? 'expired' : status;
+        _orderStatus = effectiveStatus;
         if (status == 'approved' || status == 'rejected') {
           _paymentExpired = false;
         }
       });
+      if (effectiveStatus == 'pending') {
+        _startMercadoPagoPaymentPolling(orderId);
+      } else {
+        _stopMercadoPagoPaymentPolling();
+      }
       if (status == 'approved') {
         _reloadVipUser();
         _showPaymentMessage('Pagamento confirmado.');
       } else if (cancelReason == 'expired' || status == 'expired') {
         await _showExpiredPaymentDialog(orderId);
       } else if (status == 'pending') {
-        _showPaymentMessage('O pagamento ainda está pendente.');
+        if (showPendingMessage) {
+          _showPaymentMessage('O pagamento ainda está pendente.');
+        }
       } else {
         _showPaymentMessage('Status atual do pagamento: $status.');
       }
@@ -504,7 +652,7 @@ class _VipPlansScreenState extends State<VipPlansScreen> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('Cancelar pagamento?'),
         content: const Text(
-          'O Pix deixará de ser válido e este plano não será ativado.',
+          'O checkout será encerrado e este plano não será ativado.',
         ),
         actions: [
           TextButton(
@@ -513,7 +661,7 @@ class _VipPlansScreenState extends State<VipPlansScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Cancelar Pix'),
+            child: const Text('Cancelar pagamento'),
           ),
         ],
       ),
@@ -526,13 +674,18 @@ class _VipPlansScreenState extends State<VipPlansScreen> {
     });
     try {
       final result = await _functions
-          .httpsCallable('cancelVipMercadoPagoPix')
+          .httpsCallable(
+            !_isLegacyPixOrder
+                ? 'cancelVipMercadoPagoCheckout'
+                : 'cancelVipMercadoPagoPix',
+          )
           .call({'orderId': orderId, 'reason': 'user'});
       final data = Map<String, dynamic>.from(result.data as Map);
       final status = data['status'] as String? ?? 'pending';
       final cancelReason = data['cancelReason'] as String?;
       if (!mounted) return;
       if (cancelReason == 'expired' || status == 'expired') {
+        _clearCoupon();
         setState(() {
           _orderStatus = 'expired';
         });
@@ -543,6 +696,7 @@ class _VipPlansScreenState extends State<VipPlansScreen> {
         _clearMercadoPagoOrder();
         _showPaymentMessage('Pagamento cancelado.');
       } else if (status == 'approved') {
+        _clearCoupon();
         setState(() => _orderStatus = 'approved');
         _reloadVipUser();
         _showPaymentMessage('Este pagamento já foi confirmado.');
@@ -561,19 +715,30 @@ class _VipPlansScreenState extends State<VipPlansScreen> {
 
   Future<void> _onMercadoPagoPaymentExpired(String orderId) async {
     if (!mounted || _paymentExpired) return;
-    var showExpirationNotice = true;
+    _stopMercadoPagoPaymentPolling();
+    _clearCoupon();
+    var showExpirationNotice = false;
     setState(() {
       _paymentExpired = true;
       _paymentError = null;
     });
     try {
       final result = await _functions
-          .httpsCallable('cancelVipMercadoPagoPix')
+          .httpsCallable(
+            !_isLegacyPixOrder
+                ? 'cancelVipMercadoPagoCheckout'
+                : 'cancelVipMercadoPagoPix',
+          )
           .call({'orderId': orderId, 'reason': 'expired'});
       final data = Map<String, dynamic>.from(result.data as Map);
       if (mounted) {
         final status = data['status'] as String? ?? 'pending';
         final cancelReason = data['cancelReason'] as String?;
+        if (status == 'approved' ||
+            cancelReason == 'expired' ||
+            status == 'expired') {
+          _clearCoupon();
+        }
         setState(() {
           _orderStatus = cancelReason == 'expired' ? 'expired' : status;
           if (status == 'approved' || status == 'rejected') {
@@ -581,17 +746,21 @@ class _VipPlansScreenState extends State<VipPlansScreen> {
           }
         });
         if (status == 'approved') {
-          showExpirationNotice = false;
           _reloadVipUser();
           _showPaymentMessage('Pagamento confirmado.');
+        } else if (cancelReason == 'expired' || status == 'expired') {
+          showExpirationNotice = true;
         } else if (status == 'rejected') {
-          showExpirationNotice = false;
           _showPaymentMessage('O pagamento não foi aprovado.');
         }
       }
     } catch (error) {
       if (mounted) {
-        setState(() => _paymentError = _callableErrorMessage(error));
+        setState(() {
+          _paymentError = _callableErrorMessage(error);
+          _paymentExpired = false;
+        });
+        _startMercadoPagoPaymentPolling(orderId);
       }
     } finally {
       if (mounted && showExpirationNotice) {
@@ -608,9 +777,9 @@ class _VipPlansScreenState extends State<VipPlansScreen> {
       builder: (dialogContext) => PopScope(
         canPop: false,
         child: AlertDialog(
-          title: const Text('Pix expirado'),
+          title: const Text('Pagamento expirado'),
           content: const Text(
-            'O prazo de 10 minutos terminou. Gere um novo Pix para continuar.',
+            'O prazo de 10 minutos terminou. Inicie um novo pagamento para continuar.',
           ),
           actions: [
             FilledButton(
@@ -623,9 +792,13 @@ class _VipPlansScreenState extends State<VipPlansScreen> {
     );
     if (confirmed != true || !mounted) return;
     try {
-      await _functions.httpsCallable('acknowledgeVipPaymentExpiration').call({
-        'orderId': orderId,
-      });
+      await _functions
+          .httpsCallable(
+            !_isLegacyPixOrder
+                ? 'acknowledgeVipMercadoPagoCheckoutExpiration'
+                : 'acknowledgeVipPaymentExpiration',
+          )
+          .call({'orderId': orderId});
     } catch (error) {
       if (mounted) {
         setState(() => _paymentError = _callableErrorMessage(error));
@@ -635,11 +808,14 @@ class _VipPlansScreenState extends State<VipPlansScreen> {
   }
 
   void _clearMercadoPagoOrder() {
+    _stopMercadoPagoPaymentPolling();
     final subscription = _orderSubscription;
     _orderSubscription = null;
     if (subscription != null) unawaited(subscription.cancel());
     setState(() {
       _orderId = null;
+      _isLegacyPixOrder = false;
+      _checkoutUrl = null;
       _paymentQrCode = null;
       _paymentQrBase64 = null;
       _paymentExpiresAt = null;
@@ -659,9 +835,9 @@ class _VipPlansScreenState extends State<VipPlansScreen> {
   }
 
   String _paymentStatusMessage(String status) {
-    if (status == 'expired') return 'Pix expirado.';
+    if (status == 'expired') return 'Pagamento expirado.';
     if (_paymentExpired) {
-      return 'Prazo encerrado. Confirmando o cancelamento do Pix...';
+      return 'Prazo encerrado. Confirmando o cancelamento do pagamento...';
     }
     if (const ['cancelled', 'canceled'].contains(status)) {
       return 'Pagamento cancelado.';
@@ -710,7 +886,9 @@ class _VipPlansScreenState extends State<VipPlansScreen> {
               status == 'approved'
                   ? 'Pagamento confirmado'
                   : isPending
-                  ? 'Pague com Pix'
+                  ? _checkoutUrl == null
+                        ? 'Pague com Pix'
+                        : 'Conclua o pagamento no Mercado Pago'
                   : _paymentStatusMessage(status),
               style: Theme.of(context).textTheme.titleMedium,
             ),
@@ -752,6 +930,57 @@ class _VipPlansScreenState extends State<VipPlansScreen> {
                 ),
               const Text(
                 'Você pode sair desta tela e retornar antes do vencimento.',
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                alignment: WrapAlignment.center,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _isCheckingPayment
+                        ? null
+                        : () => _checkMercadoPagoPayment(orderId),
+                    icon: _isCheckingPayment
+                        ? const SizedBox.square(
+                            dimension: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.refresh),
+                    label: const Text('Já paguei'),
+                  ),
+                  TextButton.icon(
+                    onPressed: _isCancellingPayment
+                        ? null
+                        : () => _confirmMercadoPagoCancellation(orderId),
+                    icon: const Icon(Icons.cancel_outlined),
+                    label: const Text('Cancelar'),
+                  ),
+                ],
+              ),
+            ] else if (isPending && _checkoutUrl != null) ...[
+              const Text(
+                'O Mercado Pago apresentará os meios de pagamento disponíveis, como Pix e cartão.',
+                textAlign: TextAlign.center,
+              ),
+              if (_paymentExpiresAt != null)
+                _VipPaymentCountdown(
+                  key: ValueKey(orderId),
+                  expiresAt: _paymentExpiresAt!,
+                  onExpired: () => _onMercadoPagoPaymentExpired(orderId),
+                ),
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                onPressed: _isOpeningCheckout
+                    ? null
+                    : () => _openMercadoPagoCheckout(orderId),
+                icon: _isOpeningCheckout
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.open_in_new),
+                label: const Text('Abrir checkout do Mercado Pago'),
               ),
               const SizedBox(height: 8),
               Wrap(

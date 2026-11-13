@@ -1434,6 +1434,63 @@ button {
   font-style: italic;
 }
 
+.vip-refund-notice {
+  display: grid;
+  gap: 5px;
+  padding: 14px 16px;
+  border: 1px solid #f1dfb8;
+  border-radius: 10px;
+  background: #fffaf0;
+  color: #65532f;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.vip-refund-notice strong {
+  color: #51401d;
+}
+
+.vip-payment-history-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #e8ecea;
+  border-radius: 12px;
+  background: white;
+}
+
+.vip-payment-history-summary {
+  padding: 13px 22px 0;
+  font-size: 11px;
+}
+
+.vip-payment-history-card {
+  min-width: 0;
+}
+
+.vip-payment-history-details {
+  display: grid;
+  gap: 5px;
+}
+
+.payment-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #fff4dc;
+  color: #795b18;
+  font-size: 10px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.payment-status-badge.is-refunded {
+  background: #e8f5ed;
+  color: #17603d;
+}
+
 @media (max-width: 700px) {
   .topbar-inner,
   .dashboard-content {
@@ -1483,6 +1540,15 @@ button {
   .venue-request-footer {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .vip-payment-history-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .vip-payment-history-summary {
+    padding-right: 17px;
+    padding-left: 17px;
   }
 
   .venue-heading-actions {
