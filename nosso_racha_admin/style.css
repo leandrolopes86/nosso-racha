@@ -494,6 +494,68 @@ button {
   padding: 32px;
 }
 
+.vip-payment-form {
+  display: grid;
+  flex: 1;
+  gap: 18px;
+  min-width: 0;
+}
+
+.vip-payment-provider-fields:not(.hidden) {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #e6ece8;
+  border-radius: 8px;
+  background: #f8faf9;
+}
+
+.vip-payment-provider-fields.hidden {
+  display: none;
+}
+
+.vip-coupon-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: end;
+  gap: 14px;
+}
+
+.vip-coupon-plans {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid #e6ece8;
+  border-radius: 9px;
+}
+
+.vip-coupon-plans legend {
+  padding: 0 6px;
+}
+
+.vip-coupon-plan-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 22px;
+}
+
+.vip-coupon-plan-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #536159;
+  font-size: 13px;
+}
+
+.vip-coupon-submit {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 .plan-config-note {
   display: grid;
   gap: 4px;
@@ -526,6 +588,24 @@ button {
   border-radius: 13px;
   background: #fff;
   box-shadow: 0 5px 18px rgba(27, 44, 36, 0.025);
+}
+
+.vip-plan-price-details {
+  margin: 0;
+  color: #35423b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.vip-plan-price-details.is-error {
+  color: #b42318;
+}
+
+.vip-plan-pricing-fields {
+  padding: 16px;
+  border: 1px solid #e6ece8;
+  border-radius: 9px;
+  background: #f8faf9;
 }
 
 .vip-plan-card-heading,
@@ -1614,6 +1694,15 @@ button {
   .vip-plan-form-grid,
   .vip-plan-limits-grid {
     grid-template-columns: 1fr;
+  }
+
+  .vip-coupon-form {
+    grid-template-columns: 1fr;
+  }
+
+  .vip-coupon-submit {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .vip-plan-form-content {

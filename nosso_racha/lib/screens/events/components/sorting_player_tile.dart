@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../../models/participant_model.dart';
+import '../../../widgets/vip_plan_badge.dart';
 
 class SortingPlayerTile extends StatelessWidget {
   final ParticipantModel player;
@@ -48,8 +49,10 @@ class SortingPlayerTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10)],
         ),
-        child: Text(player.nickname.isNotEmpty ? player.nickname : player.name,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        child: Text(
+          player.nickname.isNotEmpty ? player.nickname : player.name,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
       ),
     );
   }
@@ -65,19 +68,26 @@ class SortingPlayerTile extends StatelessWidget {
       data: player,
       // RESOLUÇÃO DEFINITIVA: FractionalTranslation desenha o card para a ESQUERDA do seu dedo!
       feedback: FractionalTranslation(
-        translation: const Offset(-0.85,
-            -0.5), // Empurra 85% do card para a esquerda e centraliza no dedo (Y)
+        translation: const Offset(
+          -0.85,
+          -0.5,
+        ), // Empurra 85% do card para a esquerda e centraliza no dedo (Y)
         child: _buildFeedback(context),
       ),
       feedbackOffset:
           Offset.zero, // Zeramos o offset nativo para evitar conflito
       childWhenDragging: Opacity(
-          opacity: 0.3,
-          child: Icon(LucideIcons.gripVertical, size: 24, color: iconColor)),
+        opacity: 0.3,
+        child: Icon(LucideIcons.gripVertical, size: 24, color: iconColor),
+      ),
       // Aumentei o padding para ficar mais fácil acertar o dedo no celular
       child: Padding(
         padding: const EdgeInsets.only(
-            left: 12.0, right: 4.0, top: 4.0, bottom: 4.0),
+          left: 12.0,
+          right: 4.0,
+          top: 4.0,
+          bottom: 4.0,
+        ),
         child: Icon(LucideIcons.gripVertical, size: 24, color: iconColor),
       ),
     );
@@ -90,8 +100,9 @@ class SortingPlayerTile extends StatelessWidget {
   }
 
   Widget _buildSimpleRow(BuildContext context) {
-    final displayName =
-        player.nickname.isNotEmpty ? player.nickname : player.name;
+    final displayName = player.nickname.isNotEmpty
+        ? player.nickname
+        : player.name;
     final textColor = Colors.black;
     final isChristmas = _isChristmasTheme(context);
     final iconColor = isChristmas ? Colors.white70 : textColor.withOpacity(0.7);
@@ -111,13 +122,24 @@ class SortingPlayerTile extends StatelessWidget {
           Icon(LucideIcons.user, size: 16, color: iconColor),
           const SizedBox(width: 8),
           Expanded(
-              child:
-                  Text(displayName, style: TextStyle(color: textStyleColor))),
+            child: Text(displayName, style: TextStyle(color: textStyleColor)),
+          ),
+
+          VipUserBadge(
+            uid: player.uid,
+            fallbackPlan: player.vipPlan,
+            fallbackExpiresAt: player.vipExpiresAt,
+            compact: true,
+          ),
 
           if (showRating && rating != null && rating! > 0)
-            Text(_getFormattedRating(),
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold, color: Colors.amber)),
+            Text(
+              _getFormattedRating(),
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.amber,
+              ),
+            ),
 
           const SizedBox(width: 8),
 
@@ -127,8 +149,11 @@ class SortingPlayerTile extends StatelessWidget {
               onTap: onOptionsTap,
               child: const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-                child: Icon(LucideIcons.arrowRightLeft,
-                    size: 18, color: Colors.blue),
+                child: Icon(
+                  LucideIcons.arrowRightLeft,
+                  size: 18,
+                  color: Colors.blue,
+                ),
               ),
             ),
 
@@ -141,8 +166,9 @@ class SortingPlayerTile extends StatelessWidget {
 
   Widget _buildTeamRow(BuildContext context) {
     final bool isGoleiro = player.roleInMatch == 'goalkeeper';
-    final displayName =
-        player.nickname.isNotEmpty ? player.nickname : player.name;
+    final displayName = player.nickname.isNotEmpty
+        ? player.nickname
+        : player.name;
     final textColor = Colors.black;
     final isChristmas = _isChristmasTheme(context);
     final iconColor = isGoleiro
@@ -162,21 +188,36 @@ class SortingPlayerTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(isGoleiro ? LucideIcons.shield : LucideIcons.user,
-              size: 16, color: iconColor),
+          Icon(
+            isGoleiro ? LucideIcons.shield : LucideIcons.user,
+            size: 16,
+            color: iconColor,
+          ),
           const SizedBox(width: 8),
           if (tier > 0) ...[
-            Text("($tier)",
-                style: TextStyle(
-                    fontSize: 12,
-                    color: tierTextColor,
-                    fontWeight: FontWeight.bold)),
+            Text(
+              "($tier)",
+              style: TextStyle(
+                fontSize: 12,
+                color: tierTextColor,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             const SizedBox(width: 4),
           ],
           Expanded(
-            child: Text(displayName,
-                style: TextStyle(fontSize: 16, color: nameColor),
-                overflow: TextOverflow.ellipsis),
+            child: Text(
+              displayName,
+              style: TextStyle(fontSize: 16, color: nameColor),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+
+          VipUserBadge(
+            uid: player.uid,
+            fallbackPlan: player.vipPlan,
+            fallbackExpiresAt: player.vipExpiresAt,
+            compact: true,
           ),
 
           // Botão das setas azuis (Mover via Popup)
@@ -185,8 +226,11 @@ class SortingPlayerTile extends StatelessWidget {
               onTap: onOptionsTap,
               child: const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-                child: Icon(LucideIcons.arrowRightLeft,
-                    size: 18, color: Colors.blue),
+                child: Icon(
+                  LucideIcons.arrowRightLeft,
+                  size: 18,
+                  color: Colors.blue,
+                ),
               ),
             ),
 

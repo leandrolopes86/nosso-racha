@@ -15,11 +15,13 @@ import '../../services/notification_service.dart';
 import '../../services/group_plan_service.dart';
 import '../../models/vip_plans_config.dart';
 import '../../widgets/group_feature_gate.dart';
+import '../../widgets/vip_plan_badge.dart';
 import '../events/create_event_screen.dart';
 import '../events/event_details_screen.dart';
 import '../admin/user_management_screen.dart';
 import '../admin/settings_screen.dart';
 import '../profile/user_profile_screen.dart';
+import '../vip/vip_plans_screen.dart';
 import '../reports/reports_screen.dart';
 import '../finance/finance_screen.dart';
 import '../misc/easter_egg_screen.dart';
@@ -37,6 +39,8 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _showHistory = false;
   int _easterEggCount = 0;
   String _groupName = "Carregando grupo...";
+  String _groupVipPlan = '';
+  DateTime? _groupVipExpiresAt;
   final Map<String, Future<_EventGroupInfo?>> _groupInfoCache = {};
 
   @override
@@ -53,18 +57,30 @@ class _HomeScreenState extends State<HomeScreen> {
   // Busca o nome do grupo dinamicamente no Firestore com base no groupId
   Future<void> _loadGroupName() async {
     if (widget.groupId == null) {
-      setState(() => _groupName = "LCS - Próximos Jogos");
+      setState(() {
+        _groupName = "LCS - Próximos Jogos";
+        _groupVipPlan = '';
+        _groupVipExpiresAt = null;
+      });
       return;
     }
 
     try {
       final groupInfo = await _fetchGroupInfo(widget.groupId!);
       if (mounted) {
-        setState(() => _groupName = groupInfo?.name ?? "Grupo indisponível");
+        setState(() {
+          _groupName = groupInfo?.name ?? "Grupo indisponível";
+          _groupVipPlan = groupInfo?.vipPlan ?? '';
+          _groupVipExpiresAt = groupInfo?.vipExpiresAt;
+        });
       }
     } on FirebaseException {
       if (mounted) {
-        setState(() => _groupName = "Grupo indisponível");
+        setState(() {
+          _groupName = "Grupo indisponível";
+          _groupVipPlan = '';
+          _groupVipExpiresAt = null;
+        });
       }
     }
   }
@@ -84,6 +100,10 @@ class _HomeScreenState extends State<HomeScreen> {
         name: name is String && name.trim().isNotEmpty ? name.trim() : null,
         ownerName: ownerName is String && ownerName.trim().isNotEmpty
             ? ownerName.trim()
+            : null,
+        vipPlan: data['vipPlan'] as String? ?? '',
+        vipExpiresAt: data['vipExpiresAt'] is Timestamp
+            ? (data['vipExpiresAt'] as Timestamp).toDate()
             : null,
       );
     });
@@ -124,7 +144,20 @@ class _HomeScreenState extends State<HomeScreen> {
         title: GestureDetector(
           onTap: _handleEasterEgg,
           behavior: HitTestBehavior.opaque,
-          child: Text(_groupName, overflow: TextOverflow.ellipsis),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(_groupName, overflow: TextOverflow.ellipsis),
+              ),
+              const SizedBox(width: 8),
+              VipPlanBadge(
+                plan: _groupVipPlan,
+                expiresAt: _groupVipExpiresAt,
+                compact: true,
+              ),
+            ],
+          ),
         ),
         centerTitle: false,
         actions: [
@@ -150,7 +183,34 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: user.hasActiveVipPlan
+                ? InkWell(
+                    borderRadius: BorderRadius.circular(6),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const VipPlansScreen()),
+                    ),
+                    child: VipPlanBadge(
+                      plan: user.vipPlan,
+                      expiresAt: user.vipExpiresAt,
+                    ),
+                  )
+                : TextButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const VipPlansScreen()),
+                    ),
+                    icon: const Icon(Icons.workspace_premium, size: 17),
+                    label: const Text('Seja VIP'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.amber[100],
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+          ),
           IconButton(
             icon: const Icon(LucideIcons.logOut, color: Colors.white70),
             tooltip: "Sair",
@@ -856,6 +916,13 @@ class _HomeScreenState extends State<HomeScreen> {
 class _EventGroupInfo {
   final String? name;
   final String? ownerName;
+  final String vipPlan;
+  final DateTime? vipExpiresAt;
 
-  const _EventGroupInfo({required this.name, required this.ownerName});
+  const _EventGroupInfo({
+    required this.name,
+    required this.ownerName,
+    required this.vipPlan,
+    required this.vipExpiresAt,
+  });
 }

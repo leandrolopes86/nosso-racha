@@ -154,6 +154,23 @@ void main() {
     expect(ParticipantModel.fromMap(participant.toMap()).isExternal, isTrue);
   });
 
+  test('participant VIP tier and expiry survive Firestore serialization', () {
+    final expiresAt = DateTime(2026, 12, 31, 23, 59);
+    final participant = ParticipantModel(
+      uid: 'vip-player',
+      name: 'VIP Player',
+      status: 'active',
+      registeredAt: DateTime(2026, 10, 23),
+      vipPlan: 'gold',
+      vipExpiresAt: expiresAt,
+    );
+
+    final restored = ParticipantModel.fromMap(participant.toMap());
+
+    expect(restored.vipPlan, 'gold');
+    expect(restored.vipExpiresAt, expiresAt);
+  });
+
   test(
     'goalkeeper payment state survives serialization without exposing Pix key',
     () {

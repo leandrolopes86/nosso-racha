@@ -42,6 +42,50 @@ void main() {
   });
 
   group('UserModel player profile', () {
+    test('reads required personal data from canonical and legacy fields', () {
+      final canonicalUser = UserModel.fromMap('user-1', {
+        'name': 'Test User',
+        'cpf': '529.982.247-25',
+        'phone': '(11) 99999-9999',
+        'birthDate': '2000-01-01',
+      });
+      final legacyUser = UserModel.fromMap('user-2', {
+        'personal_info': {
+          'full_name': 'Legacy User',
+          'cpf': '529.982.247-25',
+          'phone_raw': '(11) 99999-9999',
+          'birth_date': '2000-01-01',
+        },
+      });
+
+      expect(canonicalUser.isProfileComplete, isTrue);
+      expect(legacyUser.isProfileComplete, isTrue);
+    });
+
+    test('does not gate existing profiles without the enforcement marker', () {
+      final existingUser = UserModel.fromMap('existing-user', {
+        'name': 'Existing User',
+        'personal_info': {'full_name': 'Existing User'},
+      });
+
+      expect(existingUser.requiresPersonalData, isFalse);
+      expect(existingUser.isProfileComplete, isTrue);
+    });
+
+    test('requires a valid CPF, phone number, and adult birth date', () {
+      final incompleteUser = UserModel(
+        uid: 'user-1',
+        name: 'Test User',
+        email: 'test@example.com',
+        requiresPersonalData: true,
+        cpf: '111.111.111-11',
+        phone: '(11) 1234-5678',
+        birthDate: '2015-01-01',
+      );
+
+      expect(incompleteUser.isProfileComplete, isFalse);
+    });
+
     test('reads plan and PIX key from Firestore data', () {
       final user = UserModel.fromMap('user-1', {
         'plan': 'athlete_vip',
@@ -90,6 +134,31 @@ void main() {
         'keeper@example.com',
       );
     });
+
+    test(
+      'serializes required profile values in canonical Firestore fields',
+      () {
+        final user = UserModel(
+          uid: 'user-1',
+          name: 'Test User',
+          email: 'test@example.com',
+          cpf: '529.982.247-25',
+          phone: '(11) 99999-9999',
+          birthDate: '2000-01-01',
+          requiresPersonalData: true,
+        );
+        final data = user.toMap();
+
+        expect(data['uid'], 'user-1');
+        expect(data['name'], 'Test User');
+        expect(data['email'], 'test@example.com');
+        expect(data['cpf'], '529.982.247-25');
+        expect(data['phone'], '(11) 99999-9999');
+        expect(data['birthDate'], '2000-01-01');
+        expect(data['requires_personal_data'], isTrue);
+        expect(data['createdAt'], isNotNull);
+      },
+    );
 
     test(
       'maps an active Platinum VIP subscription to organizer permissions',

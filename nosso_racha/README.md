@@ -35,6 +35,7 @@ test/               Testes unitários e de widgets Flutter
 tool/
   firestore-migration/      Prévia e migração idempotente de dados legados
   firestore-rules-tests/    Testes de autorização no emulador Firestore
+functions/                  Checkout VIP e ativação via webhook
 firestore.rules             Regras de segurança versionadas
 firestore.indexes.json      Índices compostos do Firestore
 ```
@@ -167,7 +168,28 @@ O contador é calculado a partir dos eventos `scheduled`, `published` e
 
 Convites para eventos privados exigem autenticação. O link pode ser resgatado por sete dias; após o resgate, o usuário mantém acesso ao evento. A coleção `events/{eventId}/invites` contém o token secreto: não compartilhe documentos de convite nem permita listagem dessa subcoleção.
 
-O app chama as funções `createMercadoPagoPix`, `refundMercadoPagoPix` e `checkAndProcessPayment`. O código-fonte dessas funções não está neste repositório; elas precisam estar implantadas no projeto Firebase e configuradas para o fluxo de pagamentos utilizado. Não inclua tokens privados do Mercado Pago no app cliente.
+O app chama as funções `createMercadoPagoPix`, `refundMercadoPagoPix` e `checkAndProcessPayment` para pagamentos de eventos. O código-fonte dessas funções existentes não está neste repositório. O checkout e webhook de assinaturas VIP estão implementados em `functions/index.js`. Não inclua tokens privados do Mercado Pago no app cliente.
+
+## Planos VIP e pagamentos
+
+No painel `nosso_racha_admin`, os cards exibem preço e duração; para editá-los, abra o modal **Editar plano** na seção **Planos VIP**. A seção **Pagamento VIP** concentra o método ativo e os dados Pix ou Mercado Pago. A preferência pública fica em `settings/payment_config`; o Access Token do Mercado Pago é armazenado em `settings/private_vip_payment_config`, sem leitura pelo app.
+
+A seção **Cupons de desconto** permite limitar cada cupom a um ou mais planos VIP e escolher desconto percentual, valor fixo ou preço final. Também é possível limitar usos, definir data e hora de encerramento, ou ambos; o cupom deixa de valer quando qualquer limite for atingido primeiro. O servidor valida o plano, a validade e o limite no checkout e reserva o uso de forma atômica. Solicitações Pix manual recusadas e cobranças automáticas canceladas ou falhas liberam a reserva.
+
+No modo Pix Manual, o app registra uma solicitação pendente em `vip_payment_requests`. Um administrador aprova ou recusa no painel; ao aprovar, o tier e o vencimento são atualizados no perfil do usuário. No modo Mercado Pago, a callable cria a cobrança e o webhook `mercadoPagoVipWebhook` consulta a API antes de ativar o plano. As telas atualizam o estado e os selos usam `vipPlan` e `vipExpiresAt`; um tier expirado deixa de ser tratado como VIP ativo.
+
+Para preparar o projeto:
+
+```bash
+npm --prefix functions install
+npm --prefix functions run lint
+npm --prefix functions test
+firebase deploy --only firestore:rules,firestore:indexes,functions --project nosso-racha
+```
+
+Depois, configure no painel Mercado Pago uma notificação do tipo `payment` para:
+`https://southamerica-east1-nosso-racha.cloudfunctions.net/mercadoPagoVipWebhook`.
+O administrador deve inserir o Access Token somente no painel; não o inclua em `config.js`, no app Flutter ou no repositório. Preços e duração começam em zero/30 dias até serem definidos pelo administrador, e planos sem preço positivo não permitem iniciar a cobrança.
 
 ## Executar
 

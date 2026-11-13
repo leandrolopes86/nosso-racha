@@ -1,4 +1,12 @@
-const sections = new Set(["overview", "records", "vip-plans", "venues", "finance"]);
+const sections = new Set([
+  "overview",
+  "records",
+  "vip-plans",
+  "vip-payments",
+  "vip-coupons",
+  "venues",
+  "finance",
+]);
 
 export function initializeNavigation() {
   const sidebar = document.querySelector("#adminSidebar");

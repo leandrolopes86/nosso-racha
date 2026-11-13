@@ -1,46 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../../services/auth_service.dart';
 import '../../models/user_model.dart';
-
-// --- FORMATADOR DE MÁSCARA PARA TELEFONE (XX) XXXXX-XXXX ---
-class _PhoneInputFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    var text = newValue.text.replaceAll(RegExp(r'\D'), '');
-    if (text.length > 11) text = text.substring(0, 11);
-
-    var buffer = StringBuffer();
-    if (text.isNotEmpty) {
-      buffer.write('(');
-      if (text.length >= 2) {
-        buffer.write('${text.substring(0, 2)}) ');
-        if (text.length <= 6) {
-          buffer.write(text.substring(2));
-        } else if (text.length <= 10) {
-          buffer.write('${text.substring(2, 6)}-${text.substring(6)}');
-        } else {
-          buffer.write('${text.substring(2, 7)}-${text.substring(7)}');
-        }
-      } else {
-        buffer.write(text);
-      }
-    }
-
-    String result = buffer.toString();
-    return TextEditingValue(
-      text: result,
-      selection: TextSelection.collapsed(offset: result.length),
-    );
-  }
-}
+import '../../utils/personal_data_validators.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -54,7 +22,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _nameController = TextEditingController();
   final _nicknameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _cpfController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _birthDateController = TextEditingController();
+  final _birthDateMask = MaskTextInputFormatter(
+    mask: '##/##/####',
+    filter: {'#': RegExp(r'[0-9]')},
+  );
   final _pixKeyController = TextEditingController();
   final _passController = TextEditingController();
   final _confirmPassController = TextEditingController();
@@ -69,7 +43,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _nameController.dispose();
     _nicknameController.dispose();
     _emailController.dispose();
+    _cpfController.dispose();
     _phoneController.dispose();
+    _birthDateController.dispose();
     _pixKeyController.dispose();
     _passController.dispose();
     _confirmPassController.dispose();
@@ -79,6 +55,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
   // Validação rígida de e-mail
   bool _isValidEmail(String email) {
     return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email);
+  }
+
+  Future<void> _selectBirthDate() async {
+    final now = DateTime.now();
+    final latestDate = DateTime(now.year - 18, now.month, now.day);
+    final selectedDate = await showDatePicker(
+      context: context,
+      initialDate: DateTime(
+        latestDate.year - 10,
+        latestDate.month,
+        latestDate.day,
+      ),
+      firstDate: DateTime(1900),
+      lastDate: latestDate,
+      helpText: 'Selecione sua data de nascimento',
+    );
+    if (selectedDate != null) {
+      _birthDateController.text = DateFormat('dd/MM/yyyy').format(selectedDate);
+    }
   }
 
   Future<void> _handleRegister() async {
@@ -102,7 +97,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
           name: _nameController.text.trim(),
           nickname: _nicknameController.text.trim(),
           email: _emailController.text.trim(),
+          cpf: _cpfController.text.trim(),
           phone: _phoneController.text.trim(),
+          requiresPersonalData: true,
+          birthDate: birthDateForStorage(_birthDateController.text),
           role: 'athlete',
           status: 'active',
           positions: [_selectedPosition!],
@@ -181,6 +179,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             name: firebaseUser.displayName ?? 'Usuário',
             email: firebaseUser.email ?? '',
             phone: firebaseUser.phoneNumber ?? '',
+            requiresPersonalData: true,
             role: 'athlete',
             status: 'active',
             positions: [_selectedPosition!],
@@ -335,12 +334,55 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
                 const SizedBox(height: 14),
 
+                TextFormField(
+                  controller: _cpfController,
+                  keyboardType: TextInputType.number,
+                  textInputAction: TextInputAction.next,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    CpfInputFormatter(),
+                  ],
+                  decoration: const InputDecoration(
+                    labelText: 'CPF *',
+                    hintText: '000.000.000-00',
+                    prefixIcon: Icon(Icons.badge_outlined),
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) =>
+                      isValidCpf(value) ? null : 'Informe um CPF válido',
+                ),
+                const SizedBox(height: 14),
+
+                TextFormField(
+                  controller: _birthDateController,
+                  keyboardType: TextInputType.number,
+                  textInputAction: TextInputAction.next,
+                  inputFormatters: [_birthDateMask],
+                  decoration: InputDecoration(
+                    labelText: 'Data de nascimento *',
+                    hintText: 'DD/MM/AAAA',
+                    suffixIcon: IconButton(
+                      tooltip: 'Abrir calendário',
+                      onPressed: _selectBirthDate,
+                      icon: const Icon(Icons.calendar_today),
+                    ),
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) => isAdult(parseBirthDate(value))
+                      ? null
+                      : 'É necessário ter pelo menos 18 anos',
+                ),
+                const SizedBox(height: 14),
+
                 // Telefone com Máscara Automática e Validação
                 TextFormField(
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
                   textInputAction: TextInputAction.next,
-                  inputFormatters: [_PhoneInputFormatter()],
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    PhoneInputFormatter(),
+                  ],
                   decoration: const InputDecoration(
                     labelText: "Telefone / WhatsApp *",
                     hintText: "(99) 99999-9999",
@@ -350,10 +392,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   validator: (value) {
                     if (value == null || value.trim().isEmpty)
                       return "Digite seu telefone";
-                    var rawDigits = value.replaceAll(RegExp(r'\D'), '');
-                    if (rawDigits.length < 10)
-                      return "Número de telefone incompleto";
-                    return null;
+                    return isValidBrazilianPhone(value)
+                        ? null
+                        : "Número de telefone incompleto";
                   },
                 ),
                 const SizedBox(height: 14),

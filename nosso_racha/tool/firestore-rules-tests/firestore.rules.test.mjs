@@ -445,9 +445,20 @@ test('group settings and finance data require an active VIP group manager', asyn
 
   await assertSucceeds(getDoc(groupSettings));
   await assertFails(getDoc(outsiderSettings));
-  await assertFails(getDoc(paymentSettings));
+  await assertSucceeds(getDoc(paymentSettings));
+  await assertSucceeds(
+    setDoc(paymentSettings, {
+      provider: 'mercadopago',
+      access_token: 'group-client-secret',
+    }),
+  );
   await assertFails(
-    setDoc(paymentSettings, { access_token: 'client-secret' }),
+    getDoc(doc(outsiderDb, 'groups/legacy-team/settings/payment_gateway')),
+  );
+  await assertFails(
+    setDoc(doc(outsiderDb, 'groups/legacy-team/settings/payment_gateway'), {
+      access_token: 'attacker-token',
+    }),
   );
   await assertFails(
     getDoc(doc(ownerDb, 'settings/payment_gateway')),
@@ -699,6 +710,18 @@ test('users can only update their own allowed profile fields', async () => {
       'personal_info.full_name': 'Updated Athlete',
     }),
   );
+  await assertSucceeds(
+    updateDoc(doc(athleteDb, 'users/free-athlete'), {
+      name: 'Updated Athlete',
+      cpf: '529.982.247-25',
+      phone: '(11) 99999-9999',
+      birthDate: '2000-01-01',
+      'personal_info.full_name': 'Updated Athlete',
+      'personal_info.cpf': '529.982.247-25',
+      'personal_info.phone_raw': '(11) 99999-9999',
+      'personal_info.birth_date': '2000-01-01',
+    }),
+  );
   await assertFails(
     updateDoc(doc(athleteDb, 'users/free-athlete'), {
       'football_stats.positions': ['Atacante', 'Goleiro'],
@@ -737,6 +760,11 @@ test('only group members can access group subcollections', async () => {
   await assertSucceeds(
     getDoc(doc(memberDb, 'groups/team/notes/private')),
   );
+  const memberships = await getDocs(
+    query(collectionGroup(memberDb, 'members'), where('uid', '==', 'member')),
+  );
+  assert.equal(memberships.docs.length, 1);
+  assert.equal(memberships.docs[0].ref.parent.parent?.id, 'team');
   await assertFails(
     getDoc(doc(outsiderDb, 'groups/team/notes/private')),
   );
@@ -1122,6 +1150,172 @@ test('goalkeeper position does not require Pix and regular managers cannot chang
   await assertSucceeds(
     updateDoc(doc(adminDb, 'users/free-athlete'), {
       plan: 'athlete_vip',
+    }),
+  );
+});
+
+test('VIP payment requests and order reads are scoped to their owners', async () => {
+  const payerDb = testEnvironment.authenticatedContext('vip-payer').firestore();
+  const otherDb = testEnvironment.authenticatedContext('vip-other').firestore();
+  const adminDb = testEnvironment
+    .authenticatedContext('vip-reviewer', { admin: true })
+    .firestore();
+  const requestRef = doc(payerDb, 'vip_payment_requests/vip-payer-request');
+  const otherRequestRef = doc(otherDb, 'vip_payment_requests/vip-other-request');
+  const orderRef = doc(payerDb, 'vip_payment_orders/vip-payer-order');
+  const futureExpiration = Timestamp.fromDate(
+    new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+  );
+
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'settings/payment_config'), {
+      provider: 'pix_manual',
+      prices: { bronze: { amountCents: 1500, durationDays: 30 } },
+    });
+    await setDoc(doc(db, 'settings/private_vip_payment_config'), {
+      accessToken: 'server-only-token',
+    });
+    await setDoc(doc(db, 'users/vip-payer'), {
+      role: 'athlete',
+      status: 'active',
+      vipPlan: 'Free',
+      vipExpiresAt: null,
+    });
+    await setDoc(doc(db, 'vip_payment_orders/vip-payer-order'), {
+      uid: 'vip-payer',
+      status: 'pending',
+    });
+    await setDoc(doc(db, 'vip_coupons/VERAO25'), {
+      code: 'VERAO25',
+      discountType: 'percent',
+      discountValue: 25,
+      maxUses: 5,
+      usedCount: 0,
+      active: true,
+    });
+    await setDoc(doc(db, 'vip_public_badges/vip-payer'), {
+      uid: 'vip-payer',
+      plan: 'gold',
+      expiresAt: futureExpiration,
+    });
+  });
+
+  await assertSucceeds(getDoc(doc(payerDb, 'settings/payment_config')));
+  await assertSucceeds(getDoc(doc(adminDb, 'vip_coupons/VERAO25')));
+  await assertSucceeds(getDocs(collection(adminDb, 'vip_coupons')));
+  await assertFails(getDoc(doc(payerDb, 'vip_coupons/VERAO25')));
+  await assertFails(getDoc(doc(otherDb, 'vip_coupons/VERAO25')));
+  await assertFails(getDocs(collection(payerDb, 'vip_coupons')));
+  await assertFails(
+    setDoc(doc(adminDb, 'vip_coupons/CLIENT-WRITE'), {
+      code: 'CLIENT-WRITE',
+      active: true,
+    }),
+  );
+  await assertFails(
+    getDoc(doc(payerDb, 'settings/private_vip_payment_config')),
+  );
+  await assertFails(
+    setDoc(doc(payerDb, 'settings/payment_config'), {
+      provider: 'mercadopago',
+    }),
+  );
+  await assertSucceeds(getDoc(doc(otherDb, 'vip_public_badges/vip-payer')));
+  await assertFails(
+    setDoc(doc(payerDb, 'vip_public_badges/vip-payer'), {
+      uid: 'vip-payer',
+      plan: 'platinum',
+      expiresAt: futureExpiration,
+    }),
+  );
+  await assertSucceeds(
+    setDoc(doc(adminDb, 'vip_public_badges/vip-payer'), {
+      uid: 'vip-payer',
+      plan: 'gold',
+      expiresAt: futureExpiration,
+    }),
+  );
+
+  await assertSucceeds(
+    setDoc(requestRef, {
+      uid: 'vip-payer',
+      userName: 'VIP Payer',
+      email: 'vip@example.com',
+      plan: 'bronze',
+      amountCents: 1500,
+      durationDays: 30,
+      provider: 'pix_manual',
+      status: 'pending',
+      createdAt: serverTimestamp(),
+    }),
+  );
+  await assertSucceeds(getDoc(requestRef));
+  await assertFails(getDoc(doc(otherDb, 'vip_payment_requests/vip-payer-request')));
+  await assertFails(
+    updateDoc(requestRef, {
+      status: 'approved',
+      reviewedAt: serverTimestamp(),
+      reviewedBy: 'vip-payer',
+      expiresAt: futureExpiration,
+    }),
+  );
+  await assertFails(
+    setDoc(otherRequestRef, {
+      uid: 'vip-other',
+      userName: 'Other User',
+      email: 'other@example.com',
+      plan: 'bronze',
+      amountCents: 100,
+      durationDays: 30,
+      provider: 'pix_manual',
+      status: 'pending',
+      createdAt: serverTimestamp(),
+    }),
+  );
+  await assertFails(
+    setDoc(doc(payerDb, 'vip_payment_requests/coupon-client-request'), {
+      uid: 'vip-payer',
+      userName: 'VIP Payer',
+      email: 'vip@example.com',
+      plan: 'bronze',
+      amountCents: 1000,
+      discountCents: 500,
+      couponCode: 'VERAO25',
+      durationDays: 30,
+      provider: 'pix_manual',
+      status: 'pending',
+      createdAt: serverTimestamp(),
+    }),
+  );
+  await assertFails(
+    setDoc(doc(payerDb, 'vip_payment_orders/client-created'), {
+      uid: 'vip-payer',
+      status: 'approved',
+    }),
+  );
+  await assertSucceeds(getDoc(orderRef));
+  await assertFails(getDoc(doc(otherDb, 'vip_payment_orders/vip-payer-order')));
+
+  await assertSucceeds(
+    updateDoc(doc(adminDb, 'users/vip-payer'), {
+      vipPlan: 'bronze',
+      vipExpiresAt: futureExpiration,
+      updatedAt: serverTimestamp(),
+      lastManualPayment: {
+        method: 'pix_manual',
+        approvedAt: serverTimestamp(),
+        approvedBy: 'vip-reviewer',
+        plan: 'bronze',
+      },
+    }),
+  );
+  await assertSucceeds(
+    updateDoc(doc(adminDb, 'vip_payment_requests/vip-payer-request'), {
+      status: 'approved',
+      reviewedAt: serverTimestamp(),
+      reviewedBy: 'vip-reviewer',
+      expiresAt: futureExpiration,
     }),
   );
 });

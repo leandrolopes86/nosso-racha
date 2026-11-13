@@ -45,6 +45,28 @@ cd nosso_racha
 firebase deploy --only firestore:rules --project nosso-racha
 ```
 
+## Preços, pagamentos e cupons VIP
+
+Nos cards Bronze, Silver, Gold e Platinum da seção **Planos VIP**, o painel
+exibe o preço e a duração configurados. Para alterar esses valores, abra
+**Editar plano** e ajuste preço e duração no modal de parametrizações. O preço
+é salvo em `settings/payment_config` pela callable administrativa
+`saveVipPlanPrice`. Salvar o método de cobrança não sobrescreve os preços
+existentes.
+
+Na seção **Pagamento VIP**, configure o método de cobrança e os dados do Pix ou
+Mercado Pago. O salvamento da configuração de pagamento é feito pela callable
+administrativa `saveVipPaymentConfig`.
+
+Na seção separada **Cupons de desconto**, cada cupom pode valer para um ou mais
+planos, aplicar desconto percentual, valor fixo ou definir o preço final do VIP.
+O limite de usos e a data/hora de encerramento são opcionais; se ambos forem
+configurados, o cupom deixa de ser válido assim que um dos limites for atingido.
+Os usos são contabilizados ao criar um pedido de pagamento, e a reserva é
+liberada quando a solicitação manual é recusada ou a cobrança automática falha
+ou é cancelada. Cupons são lidos apenas por administradores no Firestore; o app
+valida e aplica o desconto por Cloud Functions.
+
 ## Cadastro e revisão de campos
 
 Na seção **Solicitações de novos campos**, use **Adicionar campo** para abrir

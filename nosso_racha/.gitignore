@@ -34,6 +34,7 @@ migrate_working_dir/
 /coverage/
 /tool/firestore-migration/node_modules/
 /tool/firestore-rules-tests/node_modules/
+/functions/node_modules/
 serviceAccountKey.json
 
 # Symbolication related

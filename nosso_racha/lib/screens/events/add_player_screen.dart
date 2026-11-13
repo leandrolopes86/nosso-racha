@@ -11,6 +11,7 @@ import '../admin/register_guest_screen.dart'; // <--- CORRIGIDO: Caminho correto
 
 class AddPlayerScreen extends StatefulWidget {
   final String eventId;
+  final String? groupId;
   final List<String> existingParticipantIds;
   final bool selectOnly;
 
@@ -18,6 +19,7 @@ class AddPlayerScreen extends StatefulWidget {
     super.key,
     required this.eventId,
     required this.existingParticipantIds,
+    this.groupId,
     this.selectOnly = false,
   });
 
@@ -73,7 +75,10 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
   }
 
   Future<void> _confirmAdd(
-      EventService? service, UserModel user, String role) async {
+    EventService? service,
+    UserModel user,
+    String role,
+  ) async {
     // --- MODO SELEÇÃO (Para Avulsos no Fechamento) ---
     if (widget.selectOnly) {
       Navigator.pop(context, {'user': user, 'role': role});
@@ -88,7 +93,8 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                  "${user.name} adicionado como ${role == 'goalkeeper' ? 'Goleiro' : 'Linha'}!"),
+                "${user.name} adicionado como ${role == 'goalkeeper' ? 'Goleiro' : 'Linha'}!",
+              ),
               backgroundColor: Colors.green,
               duration: const Duration(seconds: 1),
             ),
@@ -101,23 +107,30 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text("Erro ao adicionar: $e"),
-              backgroundColor: Colors.red),
+            content: Text("Erro ao adicionar: $e"),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
   }
 
   void _showPositionDialog(
-      BuildContext context, EventService? service, UserModel user) {
+    BuildContext context,
+    EventService? service,
+    UserModel user,
+  ) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(widget.selectOnly
-            ? "Selecionar ${user.name}"
-            : "Adicionar ${user.name}"),
+        title: Text(
+          widget.selectOnly
+              ? "Selecionar ${user.name}"
+              : "Adicionar ${user.name}",
+        ),
         content: const Text(
-            "Este atleta joga nas duas posições. Onde ele vai jogar hoje?"),
+          "Este atleta joga nas duas posições. Onde ele vai jogar hoje?",
+        ),
         actions: [
           TextButton.icon(
             onPressed: () {
@@ -125,8 +138,10 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
               _confirmAdd(service, user, 'goalkeeper');
             },
             icon: Icon(LucideIcons.shield, color: Colors.purple),
-            label:
-                const Text("GOLEIRO", style: TextStyle(color: Colors.purple)),
+            label: const Text(
+              "GOLEIRO",
+              style: TextStyle(color: Colors.purple),
+            ),
           ),
           ElevatedButton.icon(
             onPressed: () {
@@ -134,7 +149,9 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
               _confirmAdd(service, user, 'line');
             },
             style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green, foregroundColor: Colors.white),
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
             icon: Icon(LucideIcons.user),
             label: const Text("LINHA"),
           ),
@@ -146,13 +163,17 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
   @override
   Widget build(BuildContext context) {
     final userService = Provider.of<UserService>(context, listen: false);
-    final currentUser =
-        Provider.of<AuthService>(context, listen: false).currentUser;
+    final currentUser = Provider.of<AuthService>(
+      context,
+      listen: false,
+    ).currentUser;
 
     return Scaffold(
       appBar: AppBar(
-          title: Text(
-              widget.selectOnly ? "Selecionar Avulso" : "Adicionar ao Jogo")),
+        title: Text(
+          widget.selectOnly ? "Selecionar Avulso" : "Adicionar ao Jogo",
+        ),
+      ),
 
       // --- NOVO: BOTÃO PARA CADASTRAR ATLETA ---
       floatingActionButton: (currentUser != null && currentUser.canRegisterUser)
@@ -161,9 +182,11 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
               foregroundColor: Colors.white,
               onPressed: () {
                 Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const RegisterGuestScreen()));
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const RegisterGuestScreen(),
+                  ),
+                );
               },
               icon: Icon(LucideIcons.userPlus),
               label: const Text("NOVO ATLETA"),
@@ -189,8 +212,9 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
                         },
                       )
                     : null,
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 filled: true,
                 fillColor: Theme.of(context).cardColor,
               ),
@@ -202,125 +226,150 @@ class _AddPlayerScreenState extends State<AddPlayerScreen> {
             ),
           ),
           Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: userService.getAllAthletesStream(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData)
-                  return const Center(child: CircularProgressIndicator());
-
-                final docs = snapshot.data!.docs;
-                final allUsers = docs.map((doc) {
-                  return UserModel.fromMap(
-                      doc.id, doc.data() as Map<String, dynamic>);
-                }).toList();
-
-                final availableUsers = allUsers.where((u) {
-                  if (u.status == 'suspended') return false;
-                  if (widget.existingParticipantIds.contains(u.uid))
-                    return false;
-
-                  final nameNormalized = _normalize(u.name);
-                  final nicknameNormalized = _normalize(u.nickname);
-
-                  return nameNormalized.contains(_searchQuery) ||
-                      nicknameNormalized.contains(_searchQuery);
-                }).toList();
-
-                if (availableUsers.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                            _searchQuery.isEmpty
-                                ? LucideIcons.userCheck
-                                : LucideIcons.searchX,
-                            size: 64,
-                            color: Colors.grey),
-                        const SizedBox(height: 16),
-                        Text(
-                            _searchQuery.isEmpty
-                                ? "Nenhum atleta disponível."
-                                : "Nenhum atleta encontrado.",
-                            style: const TextStyle(color: Colors.grey)),
-                      ],
+            child:
+                !widget.selectOnly &&
+                    (widget.groupId == null || widget.groupId!.isEmpty)
+                ? const Center(
+                    child: Text('Este racha não está vinculado a um grupo.'),
+                  )
+                : StreamBuilder<QuerySnapshot>(
+                    stream: userService.getAllAthletesStream(
+                      groupId: widget.selectOnly ? null : widget.groupId,
                     ),
-                  );
-                }
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData)
+                        return const Center(child: CircularProgressIndicator());
 
-                return ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-                  itemCount: availableUsers.length,
-                  separatorBuilder: (_, __) => const Divider(),
-                  itemBuilder: (context, index) {
-                    final user = availableUsers[index];
-                    String position = user.positions.isNotEmpty
-                        ? user.positions.join('/')
-                        : 'Linha';
-                    String rating = _formatRating(user.rating);
-                    final bool isGK = user.positions.contains('Goleiro');
+                      final docs = snapshot.data!.docs;
+                      final allUsers = docs.map((doc) {
+                        return UserModel.fromMap(
+                          doc.id,
+                          doc.data() as Map<String, dynamic>,
+                        );
+                      }).toList();
 
-                    // Lógica para definir o destaque (Apelido em evidência, Nome completo abaixo)
-                    final String displayNickname = user.nickname.isNotEmpty ? user.nickname : user.name;
-                    final String displayFullName = user.name;
+                      final availableUsers = allUsers.where((u) {
+                        if (u.status == 'suspended') return false;
+                        if (widget.existingParticipantIds.contains(u.uid))
+                          return false;
 
-                    return ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: user.status == 'active'
-                            ? (isGK ? Colors.purple[100] : Colors.green[100])
-                            : Colors.grey[300],
-                        child: Text(
-                            user.name.isNotEmpty
-                                ? user.name[0].toUpperCase()
-                                : '?',
-                            style: TextStyle(
-                                color: isGK ? Colors.purple : Colors.green[800],
-                                fontWeight: FontWeight.bold)),
-                      ),
-                      // TÍTULO: Apelido em destaque (Negrito)
-                      title: Text(
-                        displayNickname,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      // SUBTÍTULO: Linha 1 = Nome completo | Linha 2 = Posição e OVR
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (user.nickname.isNotEmpty) ...[
-                            Text(
-                              displayFullName,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Colors.grey[700],
+                        final nameNormalized = _normalize(u.name);
+                        final nicknameNormalized = _normalize(u.nickname);
+
+                        return nameNormalized.contains(_searchQuery) ||
+                            nicknameNormalized.contains(_searchQuery);
+                      }).toList();
+
+                      if (availableUsers.isEmpty) {
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                _searchQuery.isEmpty
+                                    ? LucideIcons.userCheck
+                                    : LucideIcons.searchX,
+                                size: 64,
+                                color: Colors.grey,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                _searchQuery.isEmpty
+                                    ? "Nenhum atleta disponível."
+                                    : "Nenhum atleta encontrado.",
+                                style: const TextStyle(color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      return ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+                        itemCount: availableUsers.length,
+                        separatorBuilder: (_, __) => const Divider(),
+                        itemBuilder: (context, index) {
+                          final user = availableUsers[index];
+                          String position = user.positions.isNotEmpty
+                              ? user.positions.join('/')
+                              : 'Linha';
+                          String rating = _formatRating(user.rating);
+                          final bool isGK = user.positions.contains('Goleiro');
+
+                          // Lógica para definir o destaque (Apelido em evidência, Nome completo abaixo)
+                          final String displayNickname =
+                              user.nickname.isNotEmpty
+                              ? user.nickname
+                              : user.name;
+                          final String displayFullName = user.name;
+
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: user.status == 'active'
+                                  ? (isGK
+                                        ? Colors.purple[100]
+                                        : Colors.green[100])
+                                  : Colors.grey[300],
+                              child: Text(
+                                user.name.isNotEmpty
+                                    ? user.name[0].toUpperCase()
+                                    : '?',
+                                style: TextStyle(
+                                  color: isGK
+                                      ? Colors.purple
+                                      : Colors.green[800],
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
-                          ],
-                          const SizedBox(height: 2),
-                          Text(
-                            "$position • OVR: $rating",
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[500],
-                              fontWeight: FontWeight.w500,
+                            // TÍTULO: Apelido em destaque (Negrito)
+                            title: Text(
+                              displayNickname,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                      isThreeLine: true, // Importante para acomodar as 3 linhas de texto sem cortar
-                      trailing: Icon(
-                          widget.selectOnly
-                              ? LucideIcons.checkCircle
-                              : LucideIcons.plusCircle,
-                          color: widget.selectOnly ? Colors.blue : Colors.green),
-                      onTap: () => _handleAddUser(user),
-                    );
-                  },
-                );
-              },
-            ),
+                            // SUBTÍTULO: Linha 1 = Nome completo | Linha 2 = Posição e OVR
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (user.nickname.isNotEmpty) ...[
+                                  Text(
+                                    displayFullName,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.grey[700],
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 2),
+                                Text(
+                                  "$position • OVR: $rating",
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[500],
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            isThreeLine:
+                                true, // Importante para acomodar as 3 linhas de texto sem cortar
+                            trailing: Icon(
+                              widget.selectOnly
+                                  ? LucideIcons.checkCircle
+                                  : LucideIcons.plusCircle,
+                              color: widget.selectOnly
+                                  ? Colors.blue
+                                  : Colors.green,
+                            ),
+                            onTap: () => _handleAddUser(user),
+                          );
+                        },
+                      );
+                    },
+                  ),
           ),
         ],
       ),

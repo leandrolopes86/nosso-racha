@@ -11,6 +11,8 @@ class ParticipantModel {
   final String goaliePaymentStatus;
   final String pixKey;
   final String? paymentGatewayId;
+  final String vipPlan;
+  final DateTime? vipExpiresAt;
   final bool isStaff;
   final bool isGuest; // Convidado do sistema (sem login)
   final bool isExternal;
@@ -28,6 +30,8 @@ class ParticipantModel {
     this.goaliePaymentStatus = 'none',
     this.pixKey = '',
     this.paymentGatewayId,
+    this.vipPlan = '',
+    this.vipExpiresAt,
     this.isStaff = false,
     this.isGuest = false,
     this.isExternal = false,
@@ -46,6 +50,10 @@ class ParticipantModel {
       'payment_status': paymentStatus,
       'goalie_payment_status': goaliePaymentStatus,
       'payment_gateway_id': paymentGatewayId,
+      'vipPlan': vipPlan,
+      'vipExpiresAt': vipExpiresAt != null
+          ? Timestamp.fromDate(vipExpiresAt!)
+          : null,
       'is_staff': isStaff,
       'is_guest': isGuest,
       'is_external': isExternal,
@@ -68,6 +76,8 @@ class ParticipantModel {
       goaliePaymentStatus: map['goalie_payment_status'] ?? 'none',
       pixKey: map['pix_key'] ?? '',
       paymentGatewayId: map['payment_gateway_id'],
+      vipPlan: map['vipPlan'] as String? ?? '',
+      vipExpiresAt: (map['vipExpiresAt'] as Timestamp?)?.toDate(),
       isStaff: map['is_staff'] ?? false,
       isGuest: map['is_guest'] ?? false,
       isExternal: map['is_external'] ?? false,
@@ -86,6 +96,8 @@ class ParticipantModel {
     bool? isAvulso,
     bool? isExternal,
     String? paymentGatewayId,
+    String? vipPlan,
+    DateTime? vipExpiresAt,
   }) {
     return ParticipantModel(
       uid: uid,
@@ -98,6 +110,8 @@ class ParticipantModel {
       goaliePaymentStatus: goaliePaymentStatus ?? this.goaliePaymentStatus,
       pixKey: pixKey ?? this.pixKey,
       paymentGatewayId: paymentGatewayId ?? this.paymentGatewayId,
+      vipPlan: vipPlan ?? this.vipPlan,
+      vipExpiresAt: vipExpiresAt ?? this.vipExpiresAt,
       isStaff: isStaff,
       isGuest: isGuest,
       isExternal: isExternal ?? this.isExternal,

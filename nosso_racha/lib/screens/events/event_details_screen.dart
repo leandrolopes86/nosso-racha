@@ -1364,6 +1364,7 @@ class _EventDetailsScreenState extends State<EventDetailsScreen>
                         MaterialPageRoute(
                           builder: (context) => AddPlayerScreen(
                             eventId: widget.eventId,
+                            groupId: event.groupId,
                             existingParticipantIds: event.participants
                                 .where((p) => p.status == 'active')
                                 .map((p) => p.uid)

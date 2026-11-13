@@ -267,6 +267,9 @@ class UserService extends ChangeNotifier {
         'role': role,
         'email': email,
         'permissions': permissions,
+        'name': name,
+        'phone': phone,
+        'birthDate': birthDate,
         'personal_info.full_name': name,
         'personal_info.phone_raw': phone,
         'personal_info.birth_date': birthDate,
@@ -325,6 +328,7 @@ class UserService extends ChangeNotifier {
         'is_owner': false,
         'email': email,
         'permissions': permissions,
+        'requires_personal_data': authUid != null,
         'personal_info': {
           'full_name': name,
           'phone_raw': phone,

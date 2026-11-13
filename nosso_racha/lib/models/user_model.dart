@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'plan_limits.dart';
 import 'vip_plans_config.dart';
+import '../utils/personal_data_validators.dart';
 
 class UserModel {
   final String uid;
@@ -8,6 +9,8 @@ class UserModel {
   final String email;
   final String nickname;
   final String phone;
+  final String cpf;
+  final bool requiresPersonalData;
   final String role; // 'master', 'org', 'athlete'
   final String status; // 'active', 'inactive', 'suspended'
   final bool isOwner;
@@ -36,6 +39,8 @@ class UserModel {
     required this.email,
     this.nickname = '',
     this.phone = '',
+    this.cpf = '',
+    this.requiresPersonalData = false,
     this.role = 'athlete',
     this.status = 'active',
     this.isOwner = false,
@@ -146,10 +151,12 @@ class UserModel {
 
     return UserModel(
       uid: uid,
-      name: personal['full_name'] ?? '',
+      name: data['name'] as String? ?? personal['full_name'] ?? '',
       email: data['email'] ?? '',
       nickname: football['nickname'] ?? '',
-      phone: personal['phone_raw'] ?? '',
+      phone: data['phone'] as String? ?? personal['phone_raw'] ?? '',
+      cpf: data['cpf'] as String? ?? personal['cpf'] ?? '',
+      requiresPersonalData: data['requires_personal_data'] == true,
       role: data['role'] ?? 'athlete',
       status: data['status'] ?? 'active',
       isOwner: data['is_owner'] ?? false,
@@ -166,7 +173,7 @@ class UserModel {
       ),
       pixKey: (data['payment_info'] as Map<String, dynamic>?)?['pix_key'] ?? '',
       rating: (football['rating'] ?? 0).toDouble(),
-      birthDate: personal['birth_date'] ?? '',
+      birthDate: data['birthDate'] as String? ?? personal['birth_date'] ?? '',
       permissions: Map<String, bool>.from(perms),
       matchesPlayed: stats['matches_played'] ?? 0,
       noShows: stats['no_shows'] ?? 0,
@@ -223,7 +230,14 @@ class UserModel {
   // --- ADICIONADO: Método toMap para gravação no Firestore ---
   Map<String, dynamic> toMap() {
     return {
+      'uid': uid,
+      'name': name,
       'email': email,
+      'cpf': cpf,
+      'phone': phone,
+      'birthDate': birthDate,
+      'createdAt': FieldValue.serverTimestamp(),
+      'requires_personal_data': requiresPersonalData,
       'role': role,
       'status': status,
       'is_owner': isOwner,
@@ -237,6 +251,7 @@ class UserModel {
       'personal_info': {
         'full_name': name,
         'phone_raw': phone,
+        'cpf': cpf,
         'birth_date': birthDate,
       },
       'football_stats': {
@@ -258,7 +273,11 @@ class UserModel {
 
   // Retorna true se os dados obrigatórios do perfil estiverem preenchidos
   bool get isProfileComplete {
-    return phone.trim().isNotEmpty && name.trim().isNotEmpty;
+    if (!requiresPersonalData) return true;
+    return name.trim().isNotEmpty &&
+        isValidCpf(cpf) &&
+        isValidBrazilianPhone(phone) &&
+        isAdult(parseBirthDate(birthDate));
   }
 
   bool get isPro {

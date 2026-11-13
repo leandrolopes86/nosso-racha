@@ -812,14 +812,86 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    match /vip_coupons/{code} {
+      allow get, list: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /vip_payment_requests/{requestId} {
+      allow get, list: if isAdmin()
+        || (signedIn() && resource.data.get('uid', null) == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.get('uid', null) == request.auth.uid
+        && request.resource.data.get('status', null) == 'pending'
+        && request.resource.data.get('provider', null) == 'pix_manual'
+        && request.resource.data.get('plan', null) in [
+          'bronze', 'silver', 'gold', 'platinum'
+        ]
+        && request.resource.data.get('amountCents', null) is int
+        && request.resource.data.get('amountCents', 0) > 0
+        && request.resource.data.get('durationDays', null) is int
+        && request.resource.data.get('durationDays', 0) > 0
+        && request.resource.data.get('createdAt', null) == request.time
+        && request.resource.data.keys().hasOnly([
+          'uid',
+          'userName',
+          'email',
+          'plan',
+          'amountCents',
+          'durationDays',
+          'provider',
+          'status',
+          'createdAt'
+        ])
+        && get(/databases/$(database)/documents/settings/payment_config)
+          .data.get('provider', null) == 'pix_manual'
+        && get(/databases/$(database)/documents/settings/payment_config)
+          .data.get('prices', {}).get(
+            request.resource.data.get('plan', ''), {}
+          ).get('amountCents', -1)
+            == request.resource.data.get('amountCents', -2)
+        && get(/databases/$(database)/documents/settings/payment_config)
+          .data.get('prices', {}).get(
+            request.resource.data.get('plan', ''), {}
+          ).get('durationDays', -1)
+            == request.resource.data.get('durationDays', -2);
+      allow update: if isAdmin()
+        && resource.data.get('status', null) == 'pending'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'reviewedAt', 'reviewedBy', 'expiresAt'])
+        && request.resource.data.get('status', null) in ['approved', 'rejected']
+        && request.resource.data.get('reviewedAt', null) == request.time
+        && request.resource.data.get('reviewedBy', null) == request.auth.uid
+        && (
+          request.resource.data.get('status', null) != 'approved'
+          || request.resource.data.get('expiresAt', null) is timestamp
+        );
+      allow delete: if false;
+    }
+
+    match /vip_payment_orders/{orderId} {
+      allow get: if signedIn()
+        && resource.data.get('uid', null) == request.auth.uid;
+      allow list, create, update, delete: if false;
+    }
+
+    match /vip_public_badges/{uid} {
+      allow get, list: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
     match /settings/{settingId} {
       allow read: if settingId == 'vip_plans'
-        || (signedIn() && settingId != 'payment_gateway');
+        || (signedIn()
+          && settingId != 'payment_gateway'
+          && settingId != 'private_vip_payment_config');
       allow write: if (
           settingId == 'vip_plans' && isAdmin()
         ) || (
           signedIn() && settingId != 'payment_gateway'
             && settingId != 'vip_plans'
+            && settingId != 'private_vip_payment_config'
+            && settingId != 'payment_config'
         );
     }
 
@@ -907,6 +979,10 @@ service cloud.firestore {
         && collection != 'settings'
         && collection != 'venues'
         && collection != 'pending_venues'
+        && collection != 'vip_payment_requests'
+        && collection != 'vip_payment_orders'
+        && collection != 'vip_coupons'
+        && collection != 'vip_public_badges'
         && collection != 'adminAccess'
         && collection != 'adminControl';
     }

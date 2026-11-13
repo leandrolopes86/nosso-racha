@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
+import '../utils/personal_data_validators.dart';
 
 class AuthService extends ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -79,6 +80,7 @@ class AuthService extends ChangeNotifier {
           name: firebaseUser.displayName ?? 'Usuário',
           email: firebaseUser.email ?? '',
           status: 'active',
+          requiresPersonalData: true,
         );
         await snapshot.reference.set(newUser.toMap());
       } catch (error, stackTrace) {
@@ -151,6 +153,37 @@ class AuthService extends ChangeNotifier {
         _setLoading(false);
       }
     }
+  }
+
+  Future<void> saveRequiredPersonalData({
+    required String name,
+    required String cpf,
+    required String phone,
+    required String birthDate,
+  }) async {
+    final firebaseUser = _auth.currentUser;
+    if (firebaseUser == null) {
+      throw StateError('Entre na sua conta para completar o perfil.');
+    }
+    if (name.trim().isEmpty ||
+        !isValidCpf(cpf) ||
+        !isValidBrazilianPhone(phone) ||
+        !isAdult(parseBirthDate(birthDate))) {
+      throw ArgumentError('Confira os dados obrigatórios do perfil.');
+    }
+
+    final normalizedBirthDate = birthDateForStorage(birthDate);
+    await _firestore.collection('users').doc(firebaseUser.uid).update({
+      'name': name.trim(),
+      'cpf': cpf.trim(),
+      'phone': phone.trim(),
+      'birthDate': normalizedBirthDate,
+      'personal_info.full_name': name.trim(),
+      'personal_info.cpf': cpf.trim(),
+      'personal_info.phone_raw': phone.trim(),
+      'personal_info.birth_date': normalizedBirthDate,
+    });
+    await reloadUser();
   }
 
   // --- LOGIN MANUAL ---

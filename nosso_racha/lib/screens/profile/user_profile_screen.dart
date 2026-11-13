@@ -4,9 +4,12 @@ import 'package:provider/provider.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:intl/intl.dart';
 import '../../services/auth_service.dart';
+import '../../services/group_membership_service.dart';
 import '../../widgets/pwa/ios_install_guide.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'profile_modal.dart'; // Importa o modal de edição de perfil que criamos antes
+import '../../screens/vip/vip_plans_screen.dart';
+import '../../widgets/vip_plan_badge.dart';
 
 class UserProfileScreen extends StatefulWidget {
   const UserProfileScreen({super.key});
@@ -21,6 +24,50 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   final _confirmPassController = TextEditingController();
   bool _isChangingPassword = false;
   bool _isReloading = false;
+  String? _groupsSourceKey;
+  Future<List<_ProfileGroup>> _groupsFuture = Future.value(const []);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final user = context.read<AuthService>().currentUser;
+    final sourceKey = user == null
+        ? ''
+        : '${user.uid}:${user.groupIds.join(',')}';
+    if (sourceKey != _groupsSourceKey) {
+      _groupsSourceKey = sourceKey;
+      _groupsFuture = user == null
+          ? Future.value(const [])
+          : _loadGroups(user.uid, user.groupIds);
+    }
+  }
+
+  Future<List<_ProfileGroup>> _loadGroups(
+    String uid,
+    List<String> groupIds,
+  ) async {
+    final memberships = await GroupMembershipService().getForUser(
+      userId: uid,
+      knownGroupIds: groupIds,
+    );
+    return memberships
+        .map((membership) {
+          final role = membership.isOwner
+              ? 'Proprietário'
+              : switch (membership.role) {
+                  'organizer' || 'co_organizer' || 'admin' => 'Organizador',
+                  _ => 'Atleta',
+                };
+          final groupName = membership.groupName?.trim();
+          return _ProfileGroup(
+            id: membership.groupId,
+            name: groupName?.isNotEmpty == true ? groupName! : 'Grupo',
+            role: role,
+          );
+        })
+        .toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  }
 
   bool get _isIOSWeb {
     return kIsWeb && (defaultTargetPlatform == TargetPlatform.iOS);
@@ -132,12 +179,23 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Text(
-                      user.name,
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      children: [
+                        Text(
+                          user.name,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        VipPlanBadge(
+                          plan: user.vipPlan,
+                          expiresAt: user.vipExpiresAt,
+                        ),
+                      ],
                     ),
                     if (user.nickname.isNotEmpty)
                       Text(
@@ -163,6 +221,28 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                       side: BorderSide.none,
                     ),
                   ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.workspace_premium),
+                title: Text(
+                  user.hasActiveVipPlan
+                      ? 'Gerenciar / renovar VIP'
+                      : 'Conhecer planos VIP',
+                ),
+                subtitle: Text(
+                  user.hasActiveVipPlan
+                      ? 'Válido até ${DateFormat('dd/MM/yyyy').format(user.vipExpiresAt!)}'
+                      : 'Compare os planos e assine pelo método disponível.',
+                ),
+                trailing: const Icon(LucideIcons.chevronRight),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const VipPlansScreen()),
                 ),
               ),
             ),
@@ -233,6 +313,67 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   ],
                 ),
               ),
+            ),
+            const SizedBox(height: 24),
+
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'ORGANIZAÇÕES',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            FutureBuilder<List<_ProfileGroup>>(
+              future: _groupsFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: LinearProgressIndicator(),
+                    ),
+                  );
+                }
+                if (snapshot.hasError) {
+                  return Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.error_outline),
+                      title: const Text(
+                        'Não foi possível carregar as organizações.',
+                      ),
+                      subtitle: Text('${snapshot.error}'),
+                    ),
+                  );
+                }
+                final groups = snapshot.data ?? const <_ProfileGroup>[];
+                if (groups.isEmpty) {
+                  return const Card(
+                    child: ListTile(
+                      leading: Icon(Icons.groups_outlined),
+                      title: Text('Você ainda não participa de organizações.'),
+                    ),
+                  );
+                }
+                return Column(
+                  children: groups
+                      .map(
+                        (group) => Card(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: ListTile(
+                            leading: const Icon(Icons.groups_outlined),
+                            title: Text(group.name),
+                            subtitle: Text(group.role),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                );
+              },
             ),
             const SizedBox(height: 24),
 
@@ -469,4 +610,16 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         );
     }
   }
+}
+
+class _ProfileGroup {
+  final String id;
+  final String name;
+  final String role;
+
+  const _ProfileGroup({
+    required this.id,
+    required this.name,
+    required this.role,
+  });
 }

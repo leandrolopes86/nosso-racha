@@ -36,13 +36,12 @@ class EventService extends ChangeNotifier {
         ),
       );
     } else {
-      query = query.where(
-        'info.visibility',
-        whereIn: const ['public', 'moderated'],
-      ).where(
-        'info.status',
-        whereIn: const ['published', 'in_progress', 'finished'],
-      );
+      query = query
+          .where('info.visibility', whereIn: const ['public', 'moderated'])
+          .where(
+            'info.status',
+            whereIn: const ['published', 'in_progress', 'finished'],
+          );
     }
 
     return query.snapshots();
@@ -886,6 +885,8 @@ class EventService extends ChangeNotifier {
             isStaff: isStaff,
             isGuest: isGuest,
             paymentGatewayId: null,
+            vipPlan: user.hasActiveVipPlan ? user.vipPlan : '',
+            vipExpiresAt: user.hasActiveVipPlan ? user.vipExpiresAt : null,
             isAvulso: false,
           ),
         );

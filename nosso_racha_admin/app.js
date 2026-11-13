@@ -19,6 +19,7 @@ import {
   writeBatch,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { initializeNavigation } from "./navigation.js";
+import { initializeVipPayments } from "./vip-payment-config.js";
 import {
   getVipPlanCatalog,
   initializeVipPlans,
@@ -39,7 +40,6 @@ const GOOGLE_MAPS_API_KEY =
   typeof window.nossoRachaConfig?.googleMapsApiKey === "string"
     ? window.nossoRachaConfig.googleMapsApiKey
     : "";
-const MANUAL_PIX_RENEWAL_DAYS = 30;
 const elements = {
   loginView: document.querySelector("#loginView"),
   dashboardView: document.querySelector("#dashboardView"),
@@ -123,6 +123,7 @@ let venueAutocompleteSessionToken;
 let venuePlacesLibrary;
 let googleMapsLoadTimeout;
 let vipPlansController;
+let vipPaymentsController;
 
 function showMessage(element, message, kind = "error") {
   element.textContent = message;
@@ -476,7 +477,7 @@ function createRecordRow(record) {
   pixButton.type = "button";
   pixButton.className = "button button-outline button-small";
   pixButton.textContent = "Aprovar Pix";
-  pixButton.title = `Simula aprovação e renova por ${MANUAL_PIX_RENEWAL_DAYS} dias`;
+  pixButton.title = "Registra a aprovação manual e renova pela duração configurada para o plano";
   pixButton.addEventListener("click", () =>
     approveManualPix(record.id, planSelect, expiryInput, pixButton),
   );
@@ -1281,12 +1282,26 @@ async function savePlan(recordId, planSelect, expiryInput, button) {
 
   button.disabled = true;
   try {
+    const userRef = doc(db, currentCollection, recordId);
+    const badgeRef = doc(db, "vip_public_badges", recordId);
+    const batch = writeBatch(db);
     const updates = {
       vipPlan: plan,
       vipExpiresAt: expiration ? Timestamp.fromDate(expiration) : null,
       updatedAt: serverTimestamp(),
     };
-    await updateDoc(doc(db, currentCollection, recordId), updates);
+    batch.update(userRef, updates);
+    if (expiration) {
+      batch.set(badgeRef, {
+        uid: recordId,
+        plan: normalizeVipPlanId(plan),
+        expiresAt: Timestamp.fromDate(expiration),
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      batch.delete(badgeRef);
+    }
+    await batch.commit();
     showMessage(elements.dashboardMessage, "Plano VIP atualizado com sucesso.", "success");
   } catch (error) {
     showMessage(
@@ -1308,16 +1323,30 @@ async function approveManualPix(recordId, planSelect, expiryInput, button) {
     return;
   }
 
+  const renewalDays = vipPaymentsController
+    ?.getConfig()
+    ?.prices?.[normalizeVipPlanId(planSelect.value)]?.durationDays;
+  if (!Number.isSafeInteger(renewalDays) || renewalDays < 1) {
+    showMessage(
+      elements.dashboardMessage,
+      "Configure a duração deste plano em Pagamento VIP antes de aprovar o Pix.",
+    );
+    return;
+  }
+
   const today = new Date();
   const currentExpiry = toDate(expiryInput.value ? new Date(`${expiryInput.value}T23:59:59`) : null);
   const renewalStart =
     currentExpiry && currentExpiry.getTime() > today.getTime() ? currentExpiry : today;
   const renewedUntil = new Date(renewalStart);
-  renewedUntil.setDate(renewedUntil.getDate() + MANUAL_PIX_RENEWAL_DAYS);
+  renewedUntil.setDate(renewedUntil.getDate() + renewalDays);
 
   button.disabled = true;
   try {
-    await updateDoc(doc(db, currentCollection, recordId), {
+    const userRef = doc(db, currentCollection, recordId);
+    const badgeRef = doc(db, "vip_public_badges", recordId);
+    const batch = writeBatch(db);
+    batch.update(userRef, {
       vipPlan: planSelect.value,
       vipExpiresAt: Timestamp.fromDate(renewedUntil),
       updatedAt: serverTimestamp(),
@@ -1328,6 +1357,13 @@ async function approveManualPix(recordId, planSelect, expiryInput, button) {
         plan: planSelect.value,
       },
     });
+    batch.set(badgeRef, {
+      uid: recordId,
+      plan: normalizeVipPlanId(planSelect.value),
+      expiresAt: Timestamp.fromDate(renewedUntil),
+      updatedAt: serverTimestamp(),
+    });
+    await batch.commit();
     expiryInput.value = dateToInputValue(renewedUntil);
     showMessage(
       elements.dashboardMessage,
@@ -1357,6 +1393,13 @@ async function showAdminDashboard(user) {
     hideDashboardMessage: () => hideMessage(elements.dashboardMessage),
   });
   vipPlansController.start();
+  vipPaymentsController ??= initializeVipPayments({
+    db,
+    auth,
+    showDashboardMessage: (message, kind) => showMessage(elements.dashboardMessage, message, kind),
+    hideDashboardMessage: () => hideMessage(elements.dashboardMessage),
+  });
+  vipPaymentsController.start();
   listenToCollection(elements.collectionSelect.value);
   listenToPendingVenues();
   listenToVenues();
@@ -1386,6 +1429,8 @@ function initialize() {
       unsubscribeVenues = undefined;
       vipPlansController?.stop();
       vipPlansController = undefined;
+      vipPaymentsController?.stop();
+      vipPaymentsController = undefined;
       pendingVenueRequests = [];
       venues = [];
       records = [];

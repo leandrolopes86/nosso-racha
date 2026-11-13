@@ -6,6 +6,7 @@ import '../../../models/event_model.dart';
 import '../../../models/participant_model.dart';
 import '../../../models/user_model.dart';
 import '../../../services/event_service.dart';
+import '../../../widgets/vip_plan_badge.dart';
 
 class ParticipantList extends StatelessWidget {
   final List<ParticipantModel> participants;
@@ -241,6 +242,12 @@ class ParticipantList extends StatelessWidget {
                 color: textColor,
               ),
             ),
+          ),
+          VipUserBadge(
+            uid: p.uid,
+            fallbackPlan: p.vipPlan,
+            fallbackExpiresAt: p.vipExpiresAt,
+            compact: true,
           ),
         ],
       ),

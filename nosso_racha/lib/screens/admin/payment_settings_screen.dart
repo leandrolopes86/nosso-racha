@@ -318,7 +318,7 @@ class _PaymentSettingsScreenState extends State<PaymentSettingsScreen> {
     final service = Provider.of<PaymentGatewayService>(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Gateway de Pagamento")),
+      appBar: AppBar(title: const Text("Recebimentos e pagamentos")),
       body: _isLoadingData
           ? const Center(child: CircularProgressIndicator())
           : _loadError != null
@@ -424,7 +424,7 @@ class _PaymentSettingsScreenState extends State<PaymentSettingsScreen> {
                                 Icon(LucideIcons.qrCode, color: Colors.green),
                                 const SizedBox(width: 8),
                                 Text(
-                                  "PIX Estático (Manual)",
+                                  "Dados do PIX do grupo",
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     color: Colors.green[900],
@@ -437,7 +437,7 @@ class _PaymentSettingsScreenState extends State<PaymentSettingsScreen> {
                             TextFormField(
                               controller: _manualKeyController,
                               decoration: const InputDecoration(
-                                labelText: "Chave PIX",
+                                labelText: "Chave PIX do grupo",
                                 prefixIcon: Icon(LucideIcons.key),
                               ),
                             ),

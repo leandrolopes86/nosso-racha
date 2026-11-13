@@ -2,11 +2,73 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/plan_limits.dart';
 import '../models/user_model.dart';
 
+class UserGroupMembership {
+  final String groupId;
+  final String? groupName;
+  final String? role;
+  final bool isOwner;
+
+  const UserGroupMembership({
+    required this.groupId,
+    required this.groupName,
+    required this.role,
+    required this.isOwner,
+  });
+}
+
 class GroupMembershipService {
   final FirebaseFirestore _firestore;
 
   GroupMembershipService({FirebaseFirestore? firestore})
     : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  Future<List<UserGroupMembership>> getForUser({
+    required String userId,
+    Iterable<String> knownGroupIds = const [],
+  }) async {
+    final membershipSnapshot = await _firestore
+        .collectionGroup('members')
+        .where('uid', isEqualTo: userId)
+        .get();
+    final membershipGroupIds = <String>{};
+    final rolesByGroupId = <String, String>{};
+    for (final membership in membershipSnapshot.docs) {
+      final groupId = membership.reference.parent.parent?.id;
+      if (groupId == null) continue;
+      membershipGroupIds.add(groupId);
+      final role = membership.data()['role'];
+      if (role is String) rolesByGroupId[groupId] = role;
+    }
+
+    final candidateGroupIds = <String>{...knownGroupIds, ...membershipGroupIds};
+    final memberships = await Future.wait(
+      candidateGroupIds.map((groupId) async {
+        final groupRef = _firestore.collection('groups').doc(groupId);
+        final groupSnapshot = await groupRef.get();
+        final group = groupSnapshot.data();
+        if (group == null) return null;
+
+        final isOwner = UserModel.groupOwnerId(group) == userId;
+        DocumentSnapshot<Map<String, dynamic>>? directMembership;
+        if (!isOwner && !membershipGroupIds.contains(groupId)) {
+          directMembership = await groupRef.collection('members').doc(userId).get();
+          if (!directMembership.exists) return null;
+        }
+
+        final groupName = group['name'];
+        return UserGroupMembership(
+          groupId: groupId,
+          groupName: groupName is String ? groupName : null,
+          role: isOwner
+              ? 'owner'
+              : rolesByGroupId[groupId] ??
+                    directMembership?.data()?['role'] as String?,
+          isOwner: isOwner,
+        );
+      }),
+    );
+    return memberships.whereType<UserGroupMembership>().toList();
+  }
 
   Future<void> addMember({
     required String groupId,

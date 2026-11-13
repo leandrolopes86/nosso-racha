@@ -12,9 +12,12 @@ import 'models/event_model.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/register_screen.dart';
 import 'screens/profile/profile_modal.dart';
+import 'screens/profile/complete_profile_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/group/create_group_modal.dart';
 import 'screens/events/event_details_screen.dart';
+import 'screens/vip/vip_plans_screen.dart';
+import 'widgets/vip_plan_badge.dart';
 
 class HomePublicaView extends StatefulWidget {
   const HomePublicaView({super.key});
@@ -57,6 +60,12 @@ class _HomePublicaViewState extends State<HomePublicaView> {
       final name = snapshot.data()?['name'];
       return name is String && name.trim().isNotEmpty ? name.trim() : null;
     });
+  }
+
+  void _openVipPlans() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const VipPlansScreen()));
   }
 
   Future<void> _loadCurrentLocation() async {
@@ -184,6 +193,9 @@ class _HomePublicaViewState extends State<HomePublicaView> {
       if (user == null) {
         throw StateError('Entre na sua conta para abrir este convite.');
       }
+      if (!user.isProfileComplete) {
+        return;
+      }
 
       await eventService.redeemPrivateEventInvite(
         eventId: eventId,
@@ -218,6 +230,15 @@ class _HomePublicaViewState extends State<HomePublicaView> {
     final user = authService.currentUser;
 
     if (user != null) {
+      if (!user.isProfileComplete) {
+        setState(() {
+          _meuGrupo = null;
+          _meusGrupos = [];
+          _usuarioDosGrupos = user.uid;
+          _carregandoGrupo = false;
+        });
+        return;
+      }
       setState(() {
         _carregandoGrupo = true;
         _usuarioDosGrupos = user.uid;
@@ -364,6 +385,10 @@ class _HomePublicaViewState extends State<HomePublicaView> {
     final authService = Provider.of<AuthService>(context);
     final currentUser = authService.currentUser;
 
+    if (currentUser != null && !currentUser.isProfileComplete) {
+      return const CompleteProfileScreen();
+    }
+
     if (currentUser == null && authService.profileError != null) {
       return Scaffold(
         body: Center(
@@ -408,6 +433,7 @@ class _HomePublicaViewState extends State<HomePublicaView> {
     }
 
     final bool isLoggedIn = currentUser != null;
+    final isCompact = MediaQuery.sizeOf(context).width < 700;
     final bool isOrganizer =
         isLoggedIn && (currentUser.isStaff || currentUser.canCreateEvent);
     final bool canCreateOrganizations =
@@ -486,6 +512,35 @@ class _HomePublicaViewState extends State<HomePublicaView> {
                   ),
                 ),
               ] else ...[
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: currentUser.hasActiveVipPlan
+                      ? InkWell(
+                          onTap: _openVipPlans,
+                          borderRadius: BorderRadius.circular(6),
+                          child: VipPlanBadge(
+                            plan: currentUser.vipPlan,
+                            expiresAt: currentUser.vipExpiresAt,
+                            compact: isCompact,
+                          ),
+                        )
+                      : isCompact
+                      ? IconButton(
+                          onPressed: _openVipPlans,
+                          tooltip: 'Seja VIP',
+                          icon: const Icon(Icons.workspace_premium),
+                          color: Colors.amber[800],
+                        )
+                      : TextButton.icon(
+                          onPressed: _openVipPlans,
+                          icon: const Icon(Icons.workspace_premium, size: 17),
+                          label: const Text('Seja VIP'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.amber[800],
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                ),
                 InkWell(
                   onTap: () async {
                     await showDialog(
@@ -516,28 +571,29 @@ class _HomePublicaViewState extends State<HomePublicaView> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              currentUser.name,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black87,
+                        if (!isCompact)
+                          Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                currentUser.name,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black87,
+                                ),
                               ),
-                            ),
-                            Text(
-                              isOrganizer ? 'Organizador' : 'Atleta',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.green[700],
-                                fontWeight: FontWeight.w600,
+                              Text(
+                                isOrganizer ? 'Organizador' : 'Atleta',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.green[700],
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
+                            ],
+                          ),
                       ],
                     ),
                   ),

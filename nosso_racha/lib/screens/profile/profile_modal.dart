@@ -1,48 +1,16 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/vip_plans_config.dart';
 import '../../services/auth_service.dart';
+import '../../services/group_membership_service.dart';
 import '../../services/theme_service.dart';
-
-// --- FORMATADOR DE MÁSCARA PARA TELEFONE (XX) XXXXX-XXXX ---
-class _PhoneInputFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    var text = newValue.text.replaceAll(RegExp(r'\D'), '');
-    if (text.length > 11) text = text.substring(0, 11);
-
-    var buffer = StringBuffer();
-    if (text.isNotEmpty) {
-      buffer.write('(');
-      if (text.length >= 2) {
-        buffer.write('${text.substring(0, 2)}) ');
-        if (text.length <= 6) {
-          buffer.write(text.substring(2));
-        } else if (text.length <= 10) {
-          buffer.write('${text.substring(2, 6)}-${text.substring(6)}');
-        } else {
-          buffer.write('${text.substring(2, 7)}-${text.substring(7)}');
-        }
-      } else {
-        buffer.write(text);
-      }
-    }
-
-    String result = buffer.toString();
-    return TextEditingValue(
-      text: result,
-      selection: TextSelection.collapsed(offset: result.length),
-    );
-  }
-}
+import '../../utils/personal_data_validators.dart';
 
 class ProfileModal extends StatefulWidget {
   const ProfileModal({super.key});
@@ -56,6 +24,8 @@ class _ProfileModalState extends State<ProfileModal> {
   late TextEditingController _nameController;
   late TextEditingController _nicknameController;
   late TextEditingController _phoneController;
+  late TextEditingController _cpfController;
+  late TextEditingController _birthDateController;
   late TextEditingController _pixKeyController;
 
   // Controladores para a alteração de senha
@@ -68,6 +38,9 @@ class _ProfileModalState extends State<ProfileModal> {
   bool _isObscureCurrent = true;
   bool _isObscureNew = true;
   bool _isObscureConfirm = true;
+  Future<List<UserGroupMembership>> _groupMembershipsFuture = Future.value(
+    const [],
+  );
 
   // Lista de posições disponíveis no app
   final List<String> _posicoesDisponiveis = [
@@ -84,9 +57,21 @@ class _ProfileModalState extends State<ProfileModal> {
     final authService = Provider.of<AuthService>(context, listen: false);
     final user = authService.currentUser;
 
+    if (user != null) {
+      _groupMembershipsFuture = GroupMembershipService().getForUser(
+        userId: user.uid,
+        knownGroupIds: user.groupIds,
+      );
+    }
     _nameController = TextEditingController(text: user?.name ?? '');
     _nicknameController = TextEditingController(text: user?.nickname ?? '');
-    _phoneController = TextEditingController(text: user?.phone ?? '');
+    _phoneController = TextEditingController(
+      text: formatBrazilianPhone(user?.phone),
+    );
+    _cpfController = TextEditingController(text: formatCpf(user?.cpf));
+    _birthDateController = TextEditingController(
+      text: birthDateForDisplay(user?.birthDate),
+    );
     _pixKeyController = TextEditingController(text: user?.pixKey ?? '');
 
     if (user != null && user.positions.isNotEmpty) {
@@ -99,6 +84,8 @@ class _ProfileModalState extends State<ProfileModal> {
     _nameController.dispose();
     _nicknameController.dispose();
     _phoneController.dispose();
+    _cpfController.dispose();
+    _birthDateController.dispose();
     _pixKeyController.dispose();
     _currentPassController.dispose();
     _newPassController.dispose();
@@ -150,7 +137,15 @@ class _ProfileModalState extends State<ProfileModal> {
             .doc(user.uid)
             .update({
               'personal_info.full_name': _nameController.text.trim(),
+              'name': _nameController.text.trim(),
+              'personal_info.cpf': _cpfController.text.trim(),
+              'cpf': _cpfController.text.trim(),
               'personal_info.phone_raw': _phoneController.text.trim(),
+              'phone': _phoneController.text.trim(),
+              'personal_info.birth_date': birthDateForStorage(
+                _birthDateController.text,
+              ),
+              'birthDate': birthDateForStorage(_birthDateController.text),
               'football_stats.nickname': _nicknameController.text.trim(),
               'football_stats.positions': _posicoesSelecionadas,
               'payment_info.pix_key': _pixKeyController.text.trim(),
@@ -320,9 +315,44 @@ class _ProfileModalState extends State<ProfileModal> {
                                 ),
                               ),
                               const SizedBox(height: 4),
-                              Text(
-                                'Organizações das quais participa: ${user.planLimits.maxGroupMemberships?.toString() ?? 'ilimitadas'}',
-                                style: const TextStyle(fontSize: 12),
+                              FutureBuilder<List<UserGroupMembership>>(
+                                future: _groupMembershipsFuture,
+                                builder: (context, snapshot) {
+                                  if (snapshot.hasError) {
+                                    return const Text(
+                                      'Não foi possível carregar suas organizações.',
+                                      style: TextStyle(fontSize: 12),
+                                    );
+                                  }
+                                  if (!snapshot.hasData) {
+                                    return const Text(
+                                      'Carregando organizações…',
+                                      style: TextStyle(fontSize: 12),
+                                    );
+                                  }
+                                  final membershipCount = snapshot.data!.length;
+                                  final membershipLimit =
+                                      user.planLimits.maxGroupMemberships;
+                                  final availableCount = membershipLimit == null
+                                      ? null
+                                      : membershipLimit > membershipCount
+                                      ? membershipLimit - membershipCount
+                                      : 0;
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Participando: $membershipCount de ${membershipLimit?.toString() ?? 'ilimitadas'} organizações',
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                      Text(
+                                        'Disponíveis: ${availableCount?.toString() ?? 'ilimitadas'}',
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                    ],
+                                  );
+                                },
                               ),
                               if (user.canCreateOrganizations)
                                 const Text(
@@ -388,11 +418,73 @@ class _ProfileModalState extends State<ProfileModal> {
                       ),
                       const SizedBox(height: 12),
 
+                      TextFormField(
+                        controller: _cpfController,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          CpfInputFormatter(),
+                        ],
+                        decoration: const InputDecoration(
+                          labelText: 'CPF',
+                          hintText: '000.000.000-00',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (value) {
+                          final isEmpty = value == null || value.trim().isEmpty;
+                          if (isEmpty && user?.requiresPersonalData != true) {
+                            return null;
+                          }
+                          return isValidCpf(value)
+                              ? null
+                              : 'Informe um CPF válido';
+                        },
+                      ),
+                      const SizedBox(height: 12),
+
+                      TextFormField(
+                        controller: _birthDateController,
+                        readOnly: true,
+                        onTap: () async {
+                          final now = DateTime.now();
+                          final latestDate = DateTime(
+                            now.year - 18,
+                            now.month,
+                            now.day,
+                          );
+                          final selectedDate = await showDatePicker(
+                            context: context,
+                            initialDate: latestDate,
+                            firstDate: DateTime(1900),
+                            lastDate: latestDate,
+                            helpText: 'Selecione sua data de nascimento',
+                          );
+                          if (selectedDate != null) {
+                            _birthDateController.text = DateFormat(
+                              'dd/MM/yyyy',
+                            ).format(selectedDate);
+                          }
+                        },
+                        decoration: const InputDecoration(
+                          labelText: 'Data de nascimento *',
+                          hintText: 'DD/MM/AAAA',
+                          suffixIcon: Icon(Icons.calendar_today),
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (value) => isAdult(parseBirthDate(value))
+                            ? null
+                            : 'É necessário ter pelo menos 18 anos',
+                      ),
+                      const SizedBox(height: 12),
+
                       // Telefone com Máscara Automática
                       TextFormField(
                         controller: _phoneController,
                         keyboardType: TextInputType.phone,
-                        inputFormatters: [_PhoneInputFormatter()],
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          PhoneInputFormatter(),
+                        ],
                         decoration: const InputDecoration(
                           labelText: "Telefone / WhatsApp",
                           hintText: "(99) 99999-9999",
@@ -400,12 +492,14 @@ class _ProfileModalState extends State<ProfileModal> {
                           border: OutlineInputBorder(),
                         ),
                         validator: (value) {
-                          if (value == null || value.trim().isEmpty)
+                          if ((value == null || value.trim().isEmpty) &&
+                              user?.requiresPersonalData == true)
                             return "Digite seu telefone";
-                          var rawDigits = value.replaceAll(RegExp(r'\D'), '');
-                          if (rawDigits.length < 10)
-                            return "Número de telefone incompleto";
-                          return null;
+                          if (value == null || value.trim().isEmpty)
+                            return null;
+                          return isValidBrazilianPhone(value)
+                              ? null
+                              : "Número de telefone incompleto";
                         },
                       ),
                       const SizedBox(height: 16),

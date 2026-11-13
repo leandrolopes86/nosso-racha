@@ -4,6 +4,10 @@ import {
   runTransaction,
   serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import {
+  getFunctions,
+  httpsCallable,
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js";
 
 const FEATURES = ["settings", "finance", "reports", "athleteManagement"];
 const LIMIT_FIELDS = {
@@ -160,7 +164,14 @@ function createLimitChip(label, value) {
   return chip;
 }
 
-function renderPlans(container, onEdit) {
+function formatPrice(amountCents) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(amountCents / 100);
+}
+
+function renderPlans(container, onEdit, prices, priceError) {
   container.replaceChildren();
   const plans = PLAN_ORDER.map((id) => planCatalog[id]);
   if (!plans.length) {
@@ -199,6 +210,21 @@ function renderPlans(container, onEdit) {
       createLimitChip("atletas/grupo", plan.limits.maxAthletesPerGroup),
       createLimitChip("relatórios", plan.featureLimits.reports ?? plan.defaultLimit),
     );
+    const pricing = prices[plan.id] ?? {};
+    const pricingDetails = makeElement(
+      "p",
+      "vip-plan-price-details",
+      plan.id === "free"
+        ? "Sem cobrança"
+        : priceError
+          ? priceError
+          : Number.isSafeInteger(pricing.amountCents) && pricing.amountCents > 0 &&
+              Number.isSafeInteger(pricing.durationDays) && pricing.durationDays > 0
+            ? `${formatPrice(pricing.amountCents)} · ${pricing.durationDays} dias`
+            : "Preço e duração não configurados",
+    );
+    if (priceError && plan.id !== "free") pricingDetails.classList.add("is-error");
+    card.append(pricingDetails);
     const footer = makeElement("div", "vip-plan-card-footer");
     const edit = makeElement("button", "button button-outline button-small", "Editar plano");
     edit.type = "button";
@@ -219,10 +245,26 @@ function readOptionalLimit(selector) {
   return number;
 }
 
-function fillForm(plan) {
+function fillForm(plan, prices) {
   document.querySelector("#vipPlanColor").value = plan?.color ?? "#18764f";
   document.querySelector("#vipPlanActive").checked = plan?.active ?? true;
   document.querySelector("#vipPlanActive").disabled = plan?.id === "free";
+  const pricingFields = document.querySelector("#vipPlanPricingFields");
+  const isPaidPlan = plan?.id !== "free";
+  const pricing = prices[plan?.id] ?? {};
+  const priceInput = document.querySelector("#vipPlanPrice");
+  const durationInput = document.querySelector("#vipPlanDurationDays");
+  pricingFields.classList.toggle("hidden", !isPaidPlan);
+  priceInput.required = isPaidPlan;
+  durationInput.required = isPaidPlan;
+  priceInput.disabled = !isPaidPlan;
+  durationInput.disabled = !isPaidPlan;
+  priceInput.value = Number.isSafeInteger(pricing.amountCents) && pricing.amountCents > 0
+    ? (pricing.amountCents / 100).toFixed(2)
+    : "";
+  durationInput.value = Number.isSafeInteger(pricing.durationDays) && pricing.durationDays > 0
+    ? String(pricing.durationDays)
+    : "";
   document.querySelector("#limitDefault").value = String(plan?.defaultLimit ?? 50);
   for (const [field, selector] of Object.entries(LIMIT_FIELDS)) {
     const value = plan?.limits?.[field];
@@ -248,13 +290,21 @@ export function initializeVipPlans({ db, auth, showDashboardMessage, hideDashboa
   const message = document.querySelector("#vipPlanMessage");
   const saveButton = document.querySelector("#saveVipPlanButton");
   const configRef = doc(db, "settings", "vip_plans");
+  const paymentConfigRef = doc(db, "settings", "payment_config");
+  const savePriceCallable = httpsCallable(
+    getFunctions(undefined, "southamerica-east1"),
+    "saveVipPlanPrice",
+  );
+  let prices = {};
+  let priceError = "";
   let unsubscribe;
+  let unsubscribePrices;
   let editingPlanId = null;
 
   const openForm = (plan = null) => {
     if (!plan || !PLAN_ORDER.includes(plan.id)) return;
     editingPlanId = plan?.id ?? null;
-    fillForm(plan);
+    fillForm(plan, prices);
     dialog.showModal();
   };
 
@@ -264,10 +314,12 @@ export function initializeVipPlans({ db, auth, showDashboardMessage, hideDashboa
     if (event.target === dialog) dialog.close();
   });
 
+  const render = () => renderPlans(list, openForm, prices, priceError);
+
   const handleSnapshot = (snapshot) => {
     if (!snapshot.exists()) {
       planCatalog = structuredClone(DEFAULT_PLANS);
-      renderPlans(list, openForm);
+      render();
       return;
     }
     const configuredPlans = snapshot.data().plans;
@@ -306,10 +358,10 @@ export function initializeVipPlans({ db, auth, showDashboardMessage, hideDashboa
     }
     planCatalog = nextCatalog;
     hide(message);
-    renderPlans(list, openForm);
+    render();
   };
   const handleError = (error) => {
-    renderPlans(list, openForm);
+    render();
     show(
       message,
       error.code === "permission-denied"
@@ -353,6 +405,22 @@ export function initializeVipPlans({ db, auth, showDashboardMessage, hideDashboa
         featureLimits: { reports: readOptionalLimit("#limitReports") },
         features: id === "platinum" ? features : [],
       };
+
+      if (id !== "free") {
+        const price = Number(document.querySelector("#vipPlanPrice").value);
+        const durationDays = Number(document.querySelector("#vipPlanDurationDays").value);
+        if (!Number.isFinite(price) || price <= 0 || price > 100000) {
+          throw new Error("Informe um preço entre R$ 0,01 e R$ 100.000,00.");
+        }
+        if (!Number.isSafeInteger(durationDays) || durationDays < 1 || durationDays > 3660) {
+          throw new Error("A duração deve ser de 1 a 3.660 dias.");
+        }
+        await savePriceCallable({
+          plan: id,
+          amountCents: Math.round(price * 100),
+          durationDays,
+        });
+      }
 
       await runTransaction(db, async (transaction) => {
         const snapshot = await transaction.get(configRef);
@@ -420,7 +488,7 @@ export function initializeVipPlans({ db, auth, showDashboardMessage, hideDashboa
       console.error("VIP plan save failed:", error);
       show(
         formMessage,
-        error.code === "permission-denied"
+        error.code === "permission-denied" || error.code === "functions/permission-denied"
           ? "A gravação foi negada. Verifique a permissão de administrador e publique as regras atualizadas."
           : `Não foi possível salvar o plano: ${error.message}`,
       );
@@ -432,10 +500,26 @@ export function initializeVipPlans({ db, auth, showDashboardMessage, hideDashboa
   return {
     start() {
       if (!unsubscribe) unsubscribe = onSnapshot(configRef, handleSnapshot, handleError);
+      if (!unsubscribePrices) {
+        unsubscribePrices = onSnapshot(
+          paymentConfigRef,
+          (snapshot) => {
+            prices = snapshot.data()?.prices ?? {};
+            priceError = "";
+            render();
+          },
+          (error) => {
+            priceError = `Falha ao carregar preços: ${error.message}`;
+            render();
+          },
+        );
+      }
     },
     stop() {
       unsubscribe?.();
       unsubscribe = undefined;
+      unsubscribePrices?.();
+      unsubscribePrices = undefined;
     },
   };
 }
