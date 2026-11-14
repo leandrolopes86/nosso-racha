@@ -9,6 +9,7 @@ const {
   validateCouponSettings,
 } = require("./vip-coupon-utils");
 const {
+  checkoutBackUrls,
   checkoutUrlForPreference,
   isApprovedVipCheckoutPayment,
   isVipRefundWithinWindow,
@@ -24,6 +25,8 @@ const PUBLIC_CONFIG = db.doc("settings/payment_config");
 const PRIVATE_CONFIG = db.doc("settings/private_vip_payment_config");
 const PAYMENT_API = "https://api.mercadopago.com/v1/payments";
 const CHECKOUT_PREFERENCES_API = "https://api.mercadopago.com/checkout/preferences";
+const VIP_CHECKOUT_RETURN_URL =
+  "https://nosso-racha.vercel.app/#/vip-checkout-return";
 const PLAN_IDS = new Set(["bronze", "silver", "gold", "platinum"]);
 const COUPONS = db.collection("vip_coupons");
 
@@ -653,11 +656,7 @@ exports.createVipMercadoPagoCheckout = onCall(async (request) => {
     payer: { email: user.email },
     external_reference: orderRef.id,
     notification_url: "https://southamerica-east1-nosso-racha.cloudfunctions.net/mercadoPagoVipWebhook",
-    back_urls: {
-      success: "nosso-racha:///vip-checkout-return",
-      failure: "nosso-racha:///vip-checkout-return",
-      pending: "nosso-racha:///vip-checkout-return",
-    },
+    back_urls: checkoutBackUrls(VIP_CHECKOUT_RETURN_URL),
     auto_return: "approved",
     expires: true,
     expiration_date_from: new Date(now.getTime() - 60 * 1000).toISOString(),

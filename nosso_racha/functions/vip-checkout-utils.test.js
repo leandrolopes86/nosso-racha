@@ -1,12 +1,32 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  checkoutBackUrls,
   checkoutUrlForPreference,
   isApprovedVipCheckoutPayment,
   isVipRefundWithinWindow,
   summarizeVipRefunds,
   validateVipRefundPayment,
 } = require("./vip-checkout-utils");
+
+test("builds Checkout Pro return URLs only from absolute HTTPS URLs", () => {
+  assert.deepEqual(
+    checkoutBackUrls("https://nosso-racha.vercel.app/#/vip-checkout-return"),
+    {
+      success: "https://nosso-racha.vercel.app/#/vip-checkout-return",
+      failure: "https://nosso-racha.vercel.app/#/vip-checkout-return",
+      pending: "https://nosso-racha.vercel.app/#/vip-checkout-return",
+    },
+  );
+  assert.throws(
+    () => checkoutBackUrls("nosso-racha:///vip-checkout-return"),
+    /absolute HTTPS URL/,
+  );
+  assert.throws(
+    () => checkoutBackUrls("http://nosso-racha.vercel.app/"),
+    /absolute HTTPS URL/,
+  );
+});
 
 test("selects production and sandbox Checkout Pro URLs from the credential", () => {
   assert.equal(

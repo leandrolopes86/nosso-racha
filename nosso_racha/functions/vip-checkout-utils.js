@@ -19,6 +19,22 @@ function checkoutUrlForPreference(accessToken, preference) {
     : null;
 }
 
+function checkoutBackUrls(returnUrl) {
+  if (typeof returnUrl !== "string" || !URL.canParse(returnUrl)) {
+    throw new TypeError("Checkout return URL must be an absolute HTTPS URL.");
+  }
+  const url = new URL(returnUrl);
+  if (url.protocol !== "https:" || !url.hostname) {
+    throw new TypeError("Checkout return URL must be an absolute HTTPS URL.");
+  }
+  const normalizedUrl = url.toString();
+  return {
+    success: normalizedUrl,
+    failure: normalizedUrl,
+    pending: normalizedUrl,
+  };
+}
+
 function isApprovedVipCheckoutPayment(orderId, order, payment) {
   const validOrder = order.provider === "mercadopago_checkout" &&
     (order.status === "pending" ||
@@ -100,6 +116,7 @@ function summarizeVipRefunds(refunds, paymentId, amountCents) {
 }
 
 module.exports = {
+  checkoutBackUrls,
   checkoutUrlForPreference,
   isApprovedVipCheckoutPayment,
   isVipRefundWithinWindow,
