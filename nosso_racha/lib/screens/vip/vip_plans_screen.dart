@@ -12,6 +12,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../models/user_model.dart';
 import '../../models/vip_plans_config.dart';
 import '../../services/auth_service.dart';
+import '../../services/vip_checkout_popup_stub.dart'
+    if (dart.library.js_interop) '../../services/vip_checkout_popup_web.dart'
+    as checkout_popup;
 import '../../widgets/vip_plan_badge.dart';
 
 class VipPlansScreen extends StatefulWidget {
@@ -429,95 +432,65 @@ class _VipPlansScreenState extends State<VipPlansScreen>
   }
 
   Future<void> _createMercadoPagoCheckout(String? couponCode) async {
-    final callable = _functions.httpsCallable('createVipMercadoPagoCheckout');
-    final result = await callable.call({
-      'plan': _selectedPlan,
-      'couponCode': couponCode,
-    });
-    final data = Map<String, dynamic>.from(result.data as Map);
-    final orderId = data['orderId'];
-    final checkoutUrl = data['checkoutUrl'];
-    final expiresAtValue = data['expiresAt'];
-    if (orderId is! String ||
-        checkoutUrl is! String ||
-        expiresAtValue is! String) {
-      throw StateError(
-        'A resposta do Mercado Pago não contém um checkout válido.',
-      );
+    final (confirmed, popup) = await _confirmMercadoPagoCheckout();
+    if (!confirmed) return;
+
+    try {
+      final callable = _functions.httpsCallable('createVipMercadoPagoCheckout');
+      final result = await callable.call({
+        'plan': _selectedPlan,
+        'couponCode': couponCode,
+      });
+      final data = Map<String, dynamic>.from(result.data as Map);
+      final orderId = data['orderId'];
+      final checkoutUrl = data['checkoutUrl'];
+      final expiresAtValue = data['expiresAt'];
+      if (orderId is! String ||
+          checkoutUrl is! String ||
+          expiresAtValue is! String) {
+        throw StateError(
+          'A resposta do Mercado Pago não contém um checkout válido.',
+        );
+      }
+      final expiresAt = DateTime.tryParse(expiresAtValue);
+      if (expiresAt == null) {
+        throw StateError(
+          'A resposta do Mercado Pago não contém um prazo válido.',
+        );
+      }
+      if (!mounted) {
+        checkout_popup.closeVipCheckoutPopup(popup);
+        return;
+      }
+      setState(() {
+        _orderId = orderId;
+        _checkoutUrl = checkoutUrl;
+        _isLegacyPixOrder = false;
+        _paymentQrCode = null;
+        _paymentQrBase64 = null;
+        _paymentExpiresAt = expiresAt;
+        _paymentExpired = false;
+        _orderStatus = 'pending';
+        _orderReloadScheduled = false;
+      });
+      _watchMercadoPagoOrder(orderId);
+      await _launchMercadoPagoCheckout(checkoutUrl, popup);
+    } catch (error) {
+      checkout_popup.closeVipCheckoutPopup(popup);
+      rethrow;
     }
-    final expiresAt = DateTime.tryParse(expiresAtValue);
-    if (expiresAt == null) {
-      throw StateError(
-        'A resposta do Mercado Pago não contém um prazo válido.',
-      );
-    }
-    if (!mounted) return;
-    setState(() {
-      _orderId = orderId;
-      _checkoutUrl = checkoutUrl;
-      _isLegacyPixOrder = false;
-      _paymentQrCode = null;
-      _paymentQrBase64 = null;
-      _paymentExpiresAt = expiresAt;
-      _paymentExpired = false;
-      _orderStatus = 'pending';
-      _orderReloadScheduled = false;
-    });
-    _watchMercadoPagoOrder(orderId);
-    await _openMercadoPagoCheckout(orderId);
   }
 
   Future<void> _openMercadoPagoCheckout(String orderId) async {
     final checkoutUrl = _checkoutUrl;
     if (checkoutUrl == null || _isOpeningCheckout) return;
-    final inAppBrowserSupported =
-        !kIsWeb &&
-        (defaultTargetPlatform == TargetPlatform.android ||
-            defaultTargetPlatform == TargetPlatform.iOS);
     setState(() => _isOpeningCheckout = true);
+    Object? popup;
     try {
-      final continueToCheckout = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          icon: const Icon(Icons.lock_outline),
-          title: const Text('Pagamento em ambiente seguro'),
-          content: Text(
-            kIsWeb
-                ? 'Você será redirecionado nesta aba para o checkout oficial do Mercado Pago. O pedido fica válido por 10 minutos; ao retornar, o pagamento será consultado automaticamente.'
-                : 'Uma visualização segura do Mercado Pago será aberta para concluir o pagamento. O pedido fica válido por 10 minutos e o status continuará sendo consultado.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Agora não'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Continuar para pagamento'),
-            ),
-          ],
-        ),
-      );
-      if (continueToCheckout != true || !mounted) return;
-      final uri = Uri.tryParse(checkoutUrl);
-      if (uri == null ||
-          uri.scheme != 'https' ||
-          !(uri.host == 'mercadopago.com.br' ||
-              uri.host.endsWith('.mercadopago.com.br') ||
-              uri.host == 'mercadopago.com' ||
-              uri.host.endsWith('.mercadopago.com'))) {
-        throw StateError('O link de checkout do Mercado Pago é inválido.');
-      }
-      final launched = await launchUrl(
-        uri,
-        mode: inAppBrowserSupported
-            ? LaunchMode.inAppBrowserView
-            : LaunchMode.platformDefault,
-        webOnlyWindowName: kIsWeb ? '_self' : null,
-      );
-      if (!launched) {
-        throw StateError('Não foi possível abrir o checkout do Mercado Pago.');
-      }
+      final confirmation = await _confirmMercadoPagoCheckout();
+      if (!confirmation.$1 || !mounted) return;
+      popup = confirmation.$2;
+      await _launchMercadoPagoCheckout(checkoutUrl, popup);
       if (mounted &&
           _orderId == orderId &&
           _orderStatus == 'pending' &&
@@ -525,11 +498,112 @@ class _VipPlansScreenState extends State<VipPlansScreen>
         await _checkMercadoPagoPayment(orderId, showPendingMessage: false);
       }
     } catch (error) {
+      checkout_popup.closeVipCheckoutPopup(popup);
       if (mounted) {
         setState(() => _paymentError = _callableErrorMessage(error));
       }
     } finally {
       if (mounted) setState(() => _isOpeningCheckout = false);
+    }
+  }
+
+  Future<(bool, Object?)> _confirmMercadoPagoCheckout() async {
+    Object? popup;
+    String? popupError;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          icon: const Icon(Icons.lock_outline),
+          title: const Text('Pagamento em ambiente seguro'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                kIsWeb
+                    ? 'Uma janela popup segura do Mercado Pago será aberta. O pedido fica válido por 10 minutos; ao retornar, o pagamento será consultado automaticamente.'
+                    : 'Uma visualização segura do Mercado Pago será aberta para concluir o pagamento. O pedido fica válido por 10 minutos e o status continuará sendo consultado.',
+              ),
+              if (popupError != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  popupError!,
+                  style: TextStyle(
+                    color: Theme.of(dialogContext).colorScheme.error,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Agora não'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (kIsWeb) {
+                  popup = checkout_popup.openVipCheckoutPopup();
+                  if (popup == null) {
+                    setDialogState(() {
+                      popupError =
+                          'O navegador bloqueou o popup. Permita pop-ups para este site e tente novamente.';
+                    });
+                    return;
+                  }
+                }
+                Navigator.pop(dialogContext, true);
+              },
+              child: Text(
+                kIsWeb ? 'Abrir popup seguro' : 'Continuar para pagamento',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) {
+      checkout_popup.closeVipCheckoutPopup(popup);
+      return (false, null);
+    }
+    return (true, popup);
+  }
+
+  Future<void> _launchMercadoPagoCheckout(
+    String checkoutUrl,
+    Object? popup,
+  ) async {
+    final uri = Uri.tryParse(checkoutUrl);
+    if (uri == null ||
+        uri.scheme != 'https' ||
+        !(uri.host == 'mercadopago.com.br' ||
+            uri.host.endsWith('.mercadopago.com.br') ||
+            uri.host == 'mercadopago.com' ||
+            uri.host.endsWith('.mercadopago.com'))) {
+      throw StateError('O link de checkout do Mercado Pago é inválido.');
+    }
+    if (kIsWeb) {
+      if (checkout_popup.vipCheckoutPopupIsClosed(popup)) {
+        throw StateError(
+          'O popup do pagamento foi fechado. Abra novamente para continuar.',
+        );
+      }
+      checkout_popup.navigateVipCheckoutPopup(popup, checkoutUrl);
+      return;
+    }
+
+    final inAppBrowserSupported =
+        defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+    final launched = await launchUrl(
+      uri,
+      mode: inAppBrowserSupported
+          ? LaunchMode.inAppBrowserView
+          : LaunchMode.platformDefault,
+    );
+    if (!launched) {
+      throw StateError('Não foi possível abrir o checkout do Mercado Pago.');
     }
   }
 
