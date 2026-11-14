@@ -476,6 +476,29 @@ class _VipPlansScreenState extends State<VipPlansScreen>
             defaultTargetPlatform == TargetPlatform.iOS);
     setState(() => _isOpeningCheckout = true);
     try {
+      final continueToCheckout = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          icon: const Icon(Icons.lock_outline),
+          title: const Text('Pagamento em ambiente seguro'),
+          content: Text(
+            kIsWeb
+                ? 'Você será redirecionado nesta aba para o checkout oficial do Mercado Pago. O pedido fica válido por 10 minutos; ao retornar, o pagamento será consultado automaticamente.'
+                : 'Uma visualização segura do Mercado Pago será aberta para concluir o pagamento. O pedido fica válido por 10 minutos e o status continuará sendo consultado.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Agora não'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Continuar para pagamento'),
+            ),
+          ],
+        ),
+      );
+      if (continueToCheckout != true || !mounted) return;
       final uri = Uri.tryParse(checkoutUrl);
       if (uri == null ||
           uri.scheme != 'https' ||
@@ -490,6 +513,7 @@ class _VipPlansScreenState extends State<VipPlansScreen>
         mode: inAppBrowserSupported
             ? LaunchMode.inAppBrowserView
             : LaunchMode.platformDefault,
+        webOnlyWindowName: kIsWeb ? '_self' : null,
       );
       if (!launched) {
         throw StateError('Não foi possível abrir o checkout do Mercado Pago.');
@@ -960,7 +984,7 @@ class _VipPlansScreenState extends State<VipPlansScreen>
               ),
             ] else if (isPending && _checkoutUrl != null) ...[
               const Text(
-                'O Mercado Pago apresentará os meios de pagamento disponíveis, como Pix e cartão.',
+                'O Mercado Pago apresentará os meios de pagamento disponíveis para esta conta, incluindo cartão quando habilitado.',
                 textAlign: TextAlign.center,
               ),
               if (_paymentExpiresAt != null)
